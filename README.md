@@ -1,0 +1,1 @@
+pour run depuis le terminal :  PYTHONPATH=src python -m field_converter.training.features_creation

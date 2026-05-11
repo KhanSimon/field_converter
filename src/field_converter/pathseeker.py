@@ -35,21 +35,6 @@ PROJECT_NAME = "field_converter"
 # Default root dir for lemp project on your PC
 
 DATA_DIR = PROJECT_ROOT / "data"
-
 REPORTS_DIR = PROJECT_ROOT / "reports"
-
 MODELS_DIR = PROJECT_ROOT / "models"
-
-
-def shard_path(
-    root_dir: Path, index: int, suffix: str, shard_size: int = 10000
-) -> Path:
-    """Return a sharded path.
-
-    :param root_dir: the root directory
-    :param index: the file number
-    :param suffix: the file suffix (for extension like '.jpg')
-
-    :return: the sharded path
-    """
-    return root_dir / f"{index // shard_size:04d}" / f"{index:08d}{suffix}"
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"

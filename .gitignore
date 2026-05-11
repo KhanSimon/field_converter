@@ -1,3 +1,9 @@
 models/
 data/
+debug_folder/
 slurms/
+scripts/
+.vscode/
+.env
+__pycache__/
+*.pyc
