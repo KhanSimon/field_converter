@@ -77,13 +77,9 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
 
-try:
-    from field_converter import pathseeker as ps
-except Exception as exc:  # pragma: no cover
-    raise ImportError(
-        "Impossible d'importer `from field_converter import pathseeker as ps`. "
-        "Lance ce script depuis l'environnement/repo où field_converter est installé."
-    ) from exc
+
+from field_converter import pathseeker as ps
+
 
 
 # -----------------------------------------------------------------------------

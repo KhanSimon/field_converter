@@ -10,7 +10,8 @@ print(f"Data shape: {data_npy.shape}")
 
 
 
-data_npz = np.load(ps.DATA_DIR / "features" / "ARG_CRO_220001.npz", allow_pickle=True)
+#data_npz = np.load(ps.DATA_DIR / "features" / "ARG_CRO_221101.npz", allow_pickle=True)
+data_npz = np.load(ps.DATA_DIR / "features_normalized" / "test" / "ARG_CRO_221101.npz", allow_pickle=True)
 print(f"Loaded keys: {list(data_npz.keys())}")
 
 # Si le fichier contient un seul tableau stocké directement (np.save) :
@@ -25,4 +26,6 @@ else:
         
             
         print(arr)
+        
+
 

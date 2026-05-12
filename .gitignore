@@ -3,6 +3,7 @@ data/
 debug_folder/
 slurms/
 scripts/
+prompts/
 .vscode/
 .env
 __pycache__/
