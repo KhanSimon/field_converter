@@ -1,9 +1,17 @@
 models/
+!src/field_converter/models/
+!src/field_converter/models/**
 data/
+!data/README.md
 debug_folder/
 slurms/
 scripts/
 prompts/
+outputs/
+play_vizu/
+!src/field_converter/play_vizu/
+!src/field_converter/play_vizu/**
+
 .vscode/
 .env
 __pycache__/
