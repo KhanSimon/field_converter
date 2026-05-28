@@ -15,24 +15,50 @@ Pré-requis: exécuter dans un environnement Python avec **PyTorch** (et NumPy, 
 
 Train (config debug par défaut):
 ```bash
-PYTHONPATH=src python -m field_converter.training.train_root_mlp --config configs/root_mlp_v1.yaml
+PYTHONPATH=src python -m field_converter.training.train_root_mlp --config configs/mlp/root_mlp_v1.yaml
 ```
 
 Évaluer (métriques + prédictions + plots):
 ```bash
-PYTHONPATH=src python -m field_converter.training.evaluate_root_mlp --config configs/root_mlp_v1.yaml --checkpoint best
+PYTHONPATH=src python -m field_converter.training.evaluate_root_mlp --config configs/mlp/root_mlp_v1.yaml --checkpoint best
 ```
 
 Baseline + comparaison (mean-root):
 ```bash
-PYTHONPATH=src python -m field_converter.training.compare_baseline_root --config configs/root_mlp_v1.yaml
+PYTHONPATH=src python -m field_converter.training.compare_baseline_root --config configs/mlp/root_mlp_v1.yaml
+```
+
+
+# V1 — Root translation refinement (temporal TCN)
+
+## Objectif
+Version temporelle (fenêtres overlapées + agrégation par frame) qui prédit `root_cam_norm_pred` de forme `(B,T,3)`.
+
+## Quickstart
+Train:
+```bash
+PYTHONPATH=src python -m field_converter.training.train_root_tcn --config configs/tcn/root_tcn_v1.yaml
+```
+
+Évaluer (métriques + prédictions + plots):
+```bash
+PYTHONPATH=src python -m field_converter.training.evaluate_root_tcn --config configs/tcn/root_tcn_v1.yaml --checkpoint best
+```
+
+Comparer Baseline vs MLP vs TCN (barplot):
+```bash
+PYTHONPATH=src python -m field_converter.training.compare_root_models \
+  --mlp_config configs/mlp/root_mlp_v1_train.yaml \
+  --tcn_config configs/tcn/root_tcn_v1.yaml \
+  --split valid
 ```
 
 
 ## Structure du code (ce qui a été ajouté)
 
 ### Config
-- `configs/root_mlp_v1.yaml`: config V1 (debug-friendly)
+- `configs/mlp/root_mlp_v1_train.yaml`: config V1 (train)
+- `configs/mlp/root_mlp_v1_debug.yaml`: config V1 (debug)
 - `src/field_converter/training/config.py`:
   - dataclasses typées: `RunConfig`, `InputConfig`, `DatasetConfig`, `ModelConfig`, `OptimizerConfig`, `TrainingConfig`, `LossWeights`, `EvalConfig`, `PlotsConfig`
   - loader `load_run_config(path)` (YAML/JSON)
@@ -97,7 +123,7 @@ Sur des fichiers `.npz` par séquence (souvent compressés) et un filesystem ré
 - `src/field_converter/losses/projection_losses.py`:
   - `loss_reprojection(...)` optionnelle en pixels (masquée)
 - `src/field_converter/losses/temporal_losses.py`:
-  - placeholder `loss_root_velocity` (non utilisé en V1)
+  - pertes temporelles masquées (utilisées en TCN)
 
 #### $L_{root}$
 
@@ -198,6 +224,9 @@ Même principe pour la 2d reprojetée en pixels.
 Les entrypoints “officiels” sont des modules (plus robustes car `scripts/` est souvent ignoré côté git):
 - `python -m field_converter.training.train_root_mlp`
 - `python -m field_converter.training.evaluate_root_mlp`
+- `python -m field_converter.training.train_root_tcn`
+- `python -m field_converter.training.evaluate_root_tcn`
+- `python -m field_converter.training.compare_root_models`
 - `python -m field_converter.training.compare_baseline_root`
 
 Ils correspondent à:
@@ -249,7 +278,7 @@ Note: toute valeur NaN/Inf dans les features d’entrée est remplacée par 0 (l
 
 
 ## Configuration (YAML) — détails
-Le fichier [configs/root_mlp_v1.yaml](configs/root_mlp_v1.yaml) contrôle tout le pipeline.
+Les fichiers dans config contrôlent tout le pipeline.
 
 ### Champs principaux
 - `run_name`: nom du run (utilisé dans `outputs/.../<run_name>/...`)

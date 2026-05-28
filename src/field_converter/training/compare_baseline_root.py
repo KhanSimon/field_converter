@@ -29,7 +29,7 @@ def _gain(baseline: float, model: float) -> Tuple[float, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate Baseline A (mean-root) and compare to model")
-    parser.add_argument("--config", type=str, default="configs/root_mlp_v1.yaml")
+    parser.add_argument("--config", type=str, default="configs/mlp/root_mlp_v1_train.yaml")
     parser.add_argument("--baseline_run_name", type=str, default="baseline_mean_root")
     parser.add_argument(
         "--model_metrics",
@@ -84,6 +84,8 @@ def main() -> None:
         max_samples_per_sequence=cfg.dataset.max_samples_per_sequence,
         subsample_stride=cfg.dataset.subsample_stride,
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
+        min_bbox_width_px=cfg.dataset.min_bbox_width_px,
+        min_bbox_height_px=cfg.dataset.min_bbox_height_px,
     )
     train_dl = torch.utils.data.DataLoader(
         train_ds,
@@ -115,6 +117,8 @@ def main() -> None:
             max_samples_per_sequence=cfg.dataset.max_samples_per_sequence,
             subsample_stride=cfg.dataset.subsample_stride,
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
+            min_bbox_width_px=cfg.dataset.min_bbox_width_px,
+            min_bbox_height_px=cfg.dataset.min_bbox_height_px,
         )
         dl = torch.utils.data.DataLoader(
             ds,

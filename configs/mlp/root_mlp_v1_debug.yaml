@@ -64,3 +64,5 @@ plots:
   seq_name: null
   person_idx: null
   num_frames_overlay: 6
+  show_sam2d_overlay: true
+  num_players_per_subplot: null

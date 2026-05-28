@@ -159,11 +159,25 @@ def print_run_info(
     img_shape_hw: Tuple[int, int],
     bbox_xyxy: np.ndarray,
     is_valid_person: bool,
+    gt2d: Optional[np.ndarray],
     valid_joints: Optional[np.ndarray],
     cam: Dict[str, Any],
 ) -> None:
     H, W = int(img_shape_hw[0]), int(img_shape_hw[1])
     bb = _bbox_summary(bbox_xyxy)
+    joints_in_image_msg = None
+
+    if gt2d is not None:
+        pts = np.asarray(gt2d, dtype=np.float32)
+        finite = np.isfinite(pts).all(axis=-1)
+        in_image = finite & (pts[..., 0] >= 0.0) & (pts[..., 0] < float(W)) & (pts[..., 1] >= 0.0) & (pts[..., 1] < float(H))
+
+        if valid_joints is not None:
+            vmask = np.asarray(valid_joints, dtype=bool)
+            if vmask.shape[0] == in_image.shape[0]:
+                in_image = in_image & vmask
+
+        joints_in_image_msg = f"{int(in_image.sum())}/{int(in_image.size)}"
 
     print("--- viz_action info ---")
     print(f"seq_name:   {seq_name}")
@@ -175,6 +189,8 @@ def print_run_info(
     if valid_joints is not None:
         vj = np.asarray(valid_joints, dtype=bool)
         print(f"valid_joints: {int(vj.sum())}/{int(vj.size)}")
+    if joints_in_image_msg is not None:
+        print(f"joints_in_image: {joints_in_image_msg}")
     print(
         "bbox_xyxy:  "
         f"x1={bb['x1']:.1f} y1={bb['y1']:.1f} x2={bb['x2']:.1f} y2={bb['y2']:.1f}"
@@ -331,6 +347,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         img_shape_hw=(img_h, img_w),
         bbox_xyxy=bbox,
         is_valid_person=is_valid_person,
+        gt2d=gt2d,
         valid_joints=valid_joints,
         cam=cam,
     )

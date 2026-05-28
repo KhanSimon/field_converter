@@ -569,9 +569,9 @@ def _build_argparser() -> argparse.ArgumentParser:
 	p.add_argument(
 		"--pelvis-mode",
 		type=str,
-		default="hips_mean",
+		default="joint8",
 		choices=["hips_mean", "joint8"],
-		help="Pelvis centering mode for SAM3D (default: hips_mean)",
+		help="Pelvis centering mode for SAM3D (default: joint8)",
 	)
 	p.add_argument(
 		"--data-dir",

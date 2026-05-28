@@ -2,7 +2,6 @@ models/
 !src/field_converter/models/
 !src/field_converter/models/**
 data/
-!data/README.md
 debug_folder/
 slurms/
 scripts/

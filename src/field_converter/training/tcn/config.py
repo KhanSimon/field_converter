@@ -3,17 +3,16 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
 import yaml
 
 from field_converter import pathseeker as ps
+from field_converter.training.config import ActivationStr, DeviceStr, InputConfig
 
 
-DeviceStr = Literal["auto", "cpu", "cuda"]
-ActivationStr = Literal["relu", "gelu"]
-BboxNoiseStr = Literal["clean", "noisy"]
-CamFeatTypeStr = Literal["base_clean", "base_noisy", "boosted_clean", "boosted_noisy"]
+PadModeStr = Literal["edge", "zero", "none"]
+AggregateOverlapsStr = Literal["mean"]
 
 
 def _as_path(value: Any) -> Optional[Path]:
@@ -38,7 +37,7 @@ def _ensure_relative_to_project_root(path: Path) -> Path:
     return path if path.is_absolute() else (ps.PROJECT_ROOT / path)
 
 
-def _load_yaml_or_json(path: Path) -> Dict[str, Any]:
+def _load_yaml_or_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config not found: {path}")
 
@@ -69,49 +68,36 @@ def _optional_positive_int(value: Any, *, field_name: str) -> Optional[int]:
 
 
 @dataclass(frozen=True)
-class InputConfig:
-    use_x3d_sam_rel: bool = True
-    use_x2d_img: bool = False
-    use_x2d_box: bool = False
-    use_bbox_feat: bool = True
-    bbox_clean_or_noisy: BboxNoiseStr = "noisy"
-    use_cam_feat: bool = True
-    cam_feat_type: CamFeatTypeStr = "boosted_clean"
-    use_valid_joints_as_input: bool = True
-
-    def validate(self) -> None:
-        if self.bbox_clean_or_noisy not in {"clean", "noisy"}:
-            raise ValueError(
-                f"input_config.bbox_clean_or_noisy must be 'clean' or 'noisy' (got {self.bbox_clean_or_noisy!r})"
-            )
-        if self.cam_feat_type not in {"base_clean", "base_noisy", "boosted_clean", "boosted_noisy"}:
-            raise ValueError(
-                "input_config.cam_feat_type must be one of: base_clean, base_noisy, boosted_clean, boosted_noisy "
-                f"(got {self.cam_feat_type!r})"
-            )
-        if not (self.use_x3d_sam_rel or self.use_x2d_img or self.use_x2d_box or self.use_bbox_feat or self.use_cam_feat):
-            raise ValueError("At least one input source must be enabled")
-
-
-@dataclass(frozen=True)
-class DatasetConfig:
+class WindowDatasetConfig:
     max_sequences: Optional[int] = None
-    max_samples_per_sequence: Optional[int] = None
-    subsample_stride: int = 1
+    max_windows_per_sequence: Optional[int] = None
+
+    window_size: int = 81
+    stride: int = 20
+    min_valid_ratio: float = 0.5
+    pad_mode: PadModeStr = "edge"
+
     min_in_image_joints_ratio: Optional[float] = None
 
     # Optional filtering to remove degenerate small boxes (in pixels).
-    # Helps avoid extreme box-normalized 2D inputs when players are partially outside the frame.
     min_bbox_width_px: Optional[float] = None
     min_bbox_height_px: Optional[float] = None
 
     def validate(self) -> None:
-        if self.subsample_stride < 1:
-            raise ValueError("dataset.subsample_stride must be >= 1")
         if self.max_sequences is not None and self.max_sequences <= 0:
             raise ValueError("dataset.max_sequences must be positive or null")
-        if self.max_samples_per_sequence is not None and self.max_samples_per_sequence <= 0:
-            raise ValueError("dataset.max_samples_per_sequence must be positive or null")
+        if self.max_windows_per_sequence is not None and self.max_windows_per_sequence <= 0:
+            raise ValueError("dataset.max_windows_per_sequence must be positive or null")
+
+        if self.window_size <= 0:
+            raise ValueError("dataset.window_size must be > 0")
+        if self.stride <= 0:
+            raise ValueError("dataset.stride must be > 0")
+        if not (0.0 <= float(self.min_valid_ratio) <= 1.0):
+            raise ValueError("dataset.min_valid_ratio must be in [0,1]")
+        if self.pad_mode not in {"edge", "zero", "none"}:
+            raise ValueError("dataset.pad_mode must be one of: edge, zero, none")
+
         if self.min_in_image_joints_ratio is not None:
             r = float(self.min_in_image_joints_ratio)
             if not (0.0 <= r <= 1.0):
@@ -124,18 +110,34 @@ class DatasetConfig:
 
 
 @dataclass(frozen=True)
-class ModelConfig:
-    hidden_dims: list[int] = field(default_factory=lambda: [256, 256, 128])
+class TCNModelConfig:
+    encoder_hidden_dims: list[int] = field(default_factory=lambda: [256, 256])
+    temporal_hidden_dim: int = 256
+    temporal_dilations: list[int] = field(default_factory=lambda: [1, 2, 4, 8])
+    temporal_kernel_size: int = 3
+
     activation: ActivationStr = "gelu"
     dropout: float = 0.1
 
+    head_hidden_dims: list[int] = field(default_factory=lambda: [128])
+
     def validate(self) -> None:
-        if any(h <= 0 for h in self.hidden_dims):
-            raise ValueError("model.hidden_dims must contain positive ints")
+        if any(h <= 0 for h in self.encoder_hidden_dims):
+            raise ValueError("model.encoder_hidden_dims must contain positive ints")
+        if self.temporal_hidden_dim <= 0:
+            raise ValueError("model.temporal_hidden_dim must be > 0")
+        if not self.temporal_dilations or any(d <= 0 for d in self.temporal_dilations):
+            raise ValueError("model.temporal_dilations must be a non-empty list of positive ints")
+        if self.temporal_kernel_size <= 0:
+            raise ValueError("model.temporal_kernel_size must be > 0")
+        if self.temporal_kernel_size % 2 != 1:
+            raise ValueError("model.temporal_kernel_size must be odd to preserve length with symmetric padding")
         if self.activation not in {"relu", "gelu"}:
             raise ValueError(f"model.activation must be 'relu' or 'gelu' (got {self.activation!r})")
         if not (0.0 <= float(self.dropout) < 1.0):
             raise ValueError("model.dropout must be in [0,1)")
+        if any(h <= 0 for h in self.head_hidden_dims):
+            raise ValueError("model.head_hidden_dims must contain positive ints")
 
 
 @dataclass(frozen=True)
@@ -146,9 +148,9 @@ class OptimizerConfig:
 
 @dataclass(frozen=True)
 class TrainingConfig:
-    batch_size: int = 512
-    epochs: int = 30
-    num_workers: int = 4
+    batch_size: int = 64
+    epochs: int = 40
+    num_workers: int = 2
     group_batches_by_sequence: bool = True
     grad_clip_norm: Optional[float] = 1.0
     early_stopping_patience: int = 10
@@ -169,6 +171,8 @@ class TrainingConfig:
 @dataclass(frozen=True)
 class LossWeights:
     root: float = 1.0
+    root_vel: float = 0.2
+    root_acc: float = 0.0
     cam3d: float = 0.0
     proj: float = 0.0
 
@@ -176,10 +180,11 @@ class LossWeights:
 @dataclass(frozen=True)
 class EvalConfig:
     splits: list[Literal["train", "valid", "test"]] = field(default_factory=lambda: ["valid", "test"])
-    batch_size: int = 1024
-    num_workers: int = 4
+    batch_size: int = 64
+    num_workers: int = 2
     save_predictions_npz: bool = True
-    save_predictions_csv: bool = False
+    save_predictions_csv: bool = True
+    aggregate_overlaps: AggregateOverlapsStr = "mean"
 
 
 @dataclass(frozen=True)
@@ -194,7 +199,7 @@ class PlotsConfig:
 
 
 @dataclass(frozen=True)
-class RunConfig:
+class TCNRunConfig:
     run_name: str
     seed: int = 123
     device: DeviceStr = "auto"
@@ -203,15 +208,13 @@ class RunConfig:
     output_dir: Path = field(default_factory=lambda: ps.PROJECT_ROOT / "outputs")
 
     input_config: InputConfig = field(default_factory=InputConfig)
-    dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    model: ModelConfig = field(default_factory=ModelConfig)
+    dataset: WindowDatasetConfig = field(default_factory=WindowDatasetConfig)
+    model: TCNModelConfig = field(default_factory=TCNModelConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     loss_weights: LossWeights = field(default_factory=LossWeights)
     eval: EvalConfig = field(default_factory=EvalConfig)
     plots: PlotsConfig = field(default_factory=PlotsConfig)
-
-    # ---- Derived paths -------------------------------------------------
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -236,21 +239,22 @@ class RunConfig:
     def validate(self) -> None:
         if not self.run_name:
             raise ValueError("run_name must be a non-empty string")
+        if self.device not in {"auto", "cpu", "cuda"}:
+            raise ValueError(f"Unsupported device: {self.device}")
+
         self.input_config.validate()
         self.dataset.validate()
         self.model.validate()
         self.training.validate()
 
 
-def load_run_config(config_path: Path | str) -> RunConfig:
+def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
     path = Path(config_path)
     cfg = _load_yaml_or_json(path)
 
-    run_name = str(cfg.get("run_name", "root_mlp_v1"))
+    run_name = str(cfg.get("run_name", "root_tcn_v1"))
     seed = int(cfg.get("seed", 123))
     device = str(cfg.get("device", "auto")).lower()
-    if device not in {"auto", "cpu", "cuda"}:
-        raise ValueError(f"Unsupported device: {device}")
 
     data_dir = _resolve_auto_dir(cfg.get("data_dir"), default=ps.DATA_DIR / "features_normalized")
     output_dir = _resolve_auto_dir(cfg.get("output_dir"), default=ps.PROJECT_ROOT / "outputs")
@@ -270,12 +274,17 @@ def load_run_config(config_path: Path | str) -> RunConfig:
     )
 
     dataset_raw = cfg.get("dataset", {}) or {}
-    dataset_cfg = DatasetConfig(
+    dataset_cfg = WindowDatasetConfig(
         max_sequences=dataset_raw.get("max_sequences"),
-        max_samples_per_sequence=dataset_raw.get("max_samples_per_sequence"),
-        subsample_stride=int(dataset_raw.get("subsample_stride", 1)),
+        max_windows_per_sequence=dataset_raw.get("max_windows_per_sequence"),
+        window_size=int(dataset_raw.get("window_size", 81)),
+        stride=int(dataset_raw.get("stride", 20)),
+        min_valid_ratio=float(dataset_raw.get("min_valid_ratio", 0.5)),
+        pad_mode=str(dataset_raw.get("pad_mode", "edge")).lower(),  # type: ignore[arg-type]
         min_in_image_joints_ratio=(
-            None if dataset_raw.get("min_in_image_joints_ratio", None) is None else float(dataset_raw["min_in_image_joints_ratio"])
+            None
+            if dataset_raw.get("min_in_image_joints_ratio", None) is None
+            else float(dataset_raw["min_in_image_joints_ratio"])
         ),
         min_bbox_width_px=(
             None if dataset_raw.get("min_bbox_width_px", None) is None else float(dataset_raw["min_bbox_width_px"])
@@ -286,10 +295,14 @@ def load_run_config(config_path: Path | str) -> RunConfig:
     )
 
     model_raw = cfg.get("model", {}) or {}
-    model_cfg = ModelConfig(
-        hidden_dims=list(model_raw.get("hidden_dims", [256, 256, 128])),
+    model_cfg = TCNModelConfig(
+        encoder_hidden_dims=list(model_raw.get("encoder_hidden_dims", [256, 256])),
+        temporal_hidden_dim=int(model_raw.get("temporal_hidden_dim", 256)),
+        temporal_dilations=list(model_raw.get("temporal_dilations", [1, 2, 4, 8])),
+        temporal_kernel_size=int(model_raw.get("temporal_kernel_size", 3)),
         activation=str(model_raw.get("activation", "gelu")).lower(),  # type: ignore[arg-type]
         dropout=float(model_raw.get("dropout", 0.1)),
+        head_hidden_dims=list(model_raw.get("head_hidden_dims", [128])),
     )
 
     optim_raw = cfg.get("optimizer", {}) or {}
@@ -300,9 +313,9 @@ def load_run_config(config_path: Path | str) -> RunConfig:
 
     training_raw = cfg.get("training", {}) or {}
     training_cfg = TrainingConfig(
-        batch_size=int(training_raw.get("batch_size", 512)),
-        epochs=int(training_raw.get("epochs", 30)),
-        num_workers=int(training_raw.get("num_workers", 4)),
+        batch_size=int(training_raw.get("batch_size", 64)),
+        epochs=int(training_raw.get("epochs", 40)),
+        num_workers=int(training_raw.get("num_workers", 2)),
         group_batches_by_sequence=bool(training_raw.get("group_batches_by_sequence", True)),
         grad_clip_norm=training_raw.get("grad_clip_norm", 1.0),
         early_stopping_patience=int(training_raw.get("early_stopping_patience", 10)),
@@ -311,6 +324,8 @@ def load_run_config(config_path: Path | str) -> RunConfig:
     loss_raw = cfg.get("loss_weights", {}) or {}
     loss_w = LossWeights(
         root=float(loss_raw.get("root", 1.0)),
+        root_vel=float(loss_raw.get("root_vel", 0.2)),
+        root_acc=float(loss_raw.get("root_acc", 0.0)),
         cam3d=float(loss_raw.get("cam3d", 0.0)),
         proj=float(loss_raw.get("proj", 0.0)),
     )
@@ -318,10 +333,11 @@ def load_run_config(config_path: Path | str) -> RunConfig:
     eval_raw = cfg.get("eval", {}) or {}
     eval_cfg = EvalConfig(
         splits=list(eval_raw.get("splits", ["valid", "test"])),
-        batch_size=int(eval_raw.get("batch_size", 1024)),
-        num_workers=int(eval_raw.get("num_workers", 4)),
+        batch_size=int(eval_raw.get("batch_size", 64)),
+        num_workers=int(eval_raw.get("num_workers", 2)),
         save_predictions_npz=bool(eval_raw.get("save_predictions_npz", True)),
-        save_predictions_csv=bool(eval_raw.get("save_predictions_csv", False)),
+        save_predictions_csv=bool(eval_raw.get("save_predictions_csv", True)),
+        aggregate_overlaps=str(eval_raw.get("aggregate_overlaps", "mean")).lower(),  # type: ignore[arg-type]
     )
 
     plots_raw = cfg.get("plots", {}) or {}
@@ -338,7 +354,7 @@ def load_run_config(config_path: Path | str) -> RunConfig:
         ),
     )
 
-    run_cfg = RunConfig(
+    run_cfg = TCNRunConfig(
         run_name=run_name,
         seed=seed,
         device=device,  # type: ignore[arg-type]

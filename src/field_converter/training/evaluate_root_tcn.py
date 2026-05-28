@@ -1,29 +1,31 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 from typing import Dict
 
 import torch
 
-from field_converter.evaluation.evaluator import Evaluator
+from field_converter.evaluation.temporal_evaluator import TemporalEvaluator
 from field_converter.evaluation.visualization import (
     plot_reprojection_overlay,
     plot_root_timeseries,
     plot_training_curves,
     plot_world_trajectory_xy,
 )
-from field_converter.models.root_refiner import RootRefiner
-from field_converter.training.config import load_run_config
-from field_converter.training.dataset import NormalizedFrameDataset, infer_input_dim
+from field_converter.models.root_tcn_refiner import RootTCNRefiner
+from field_converter.training.dataset import infer_input_dim
+from field_converter.training.tcn.config import load_tcn_run_config
+from field_converter.training.tcn.window_dataset import NormalizedWindowDataset
 from field_converter.utils.io import ensure_dir, write_json
 from field_converter.utils.normalization import TorchNormalizationStats
 from field_converter.utils.torch_utils import get_device
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate V1 frame-wise root MLP")
-    parser.add_argument("--config", type=str, default="configs/mlp/root_mlp_v1_train.yaml")
+    parser = argparse.ArgumentParser(description="Evaluate V1 temporal root TCN")
+    parser.add_argument("--config", type=str, default="configs/tcn/root_tcn_v1.yaml")
     parser.add_argument(
         "--checkpoint",
         type=str,
@@ -32,10 +34,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cfg = load_run_config(Path(args.config))
+    cfg = load_tcn_run_config(Path(args.config))
     device = get_device(cfg.device)
 
-    # Resolve checkpoint path.
     if args.checkpoint in {"best", "last"}:
         ckpt_path = cfg.checkpoints_dir / f"{args.checkpoint}.pt"
     else:
@@ -47,14 +48,23 @@ def main() -> None:
     ensure_dir(cfg.eval_reports_dir)
     ensure_dir(cfg.predictions_dir)
 
+    # Keep a copy of the config used for this evaluation.
+    cfg_used = cfg.eval_reports_dir / "config_used.yaml"
+    if not cfg_used.exists():
+        shutil.copyfile(Path(args.config), cfg_used)
+
     stats = TorchNormalizationStats.load(cfg.normalization_stats_path, device="cpu")
 
     input_dim = infer_input_dim(cfg.input_config)
-    model = RootRefiner(
+    model = RootTCNRefiner(
         input_dim=input_dim,
-        hidden_dims=cfg.model.hidden_dims,
+        encoder_hidden_dims=cfg.model.encoder_hidden_dims,
+        temporal_hidden_dim=cfg.model.temporal_hidden_dim,
+        temporal_dilations=cfg.model.temporal_dilations,
+        temporal_kernel_size=cfg.model.temporal_kernel_size,
         activation=cfg.model.activation,
         dropout=cfg.model.dropout,
+        head_hidden_dims=cfg.model.head_hidden_dims,
     )
 
     ckpt = torch.load(ckpt_path, map_location="cpu")
@@ -64,14 +74,9 @@ def main() -> None:
 
     dl_kwargs: dict[str, object] = {}
     if cfg.eval.num_workers > 0:
-        dl_kwargs.update(
-            {
-                "persistent_workers": True,
-                "prefetch_factor": 1,
-            }
-        )
+        dl_kwargs.update({"persistent_workers": True, "prefetch_factor": 1})
 
-    evaluator = Evaluator(
+    evaluator = TemporalEvaluator(
         stats=stats,
         device=device,
         save_predictions_npz=cfg.eval.save_predictions_npz,
@@ -81,17 +86,19 @@ def main() -> None:
     report: Dict[str, Dict[str, float]] = {}
 
     for split in cfg.eval.splits:
-        ds = NormalizedFrameDataset(
+        ds = NormalizedWindowDataset(
             data_dir=cfg.data_dir,
             split=split,
             input_config=cfg.input_config,
             seed=cfg.seed,
             max_sequences=cfg.dataset.max_sequences,
-            max_samples_per_sequence=cfg.dataset.max_samples_per_sequence,
-            subsample_stride=cfg.dataset.subsample_stride,
+            max_windows_per_sequence=None,
+            window_size=cfg.dataset.window_size,
+            stride=cfg.dataset.stride,
+            min_valid_ratio=0.0,
+            pad_mode=cfg.dataset.pad_mode,
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
-            min_bbox_width_px=cfg.dataset.min_bbox_width_px,
-            min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+            filter_by_min_valid_ratio=False,
         )
         dl = torch.utils.data.DataLoader(
             ds,
@@ -102,13 +109,22 @@ def main() -> None:
             **dl_kwargs,
         )
 
-        out = evaluator.evaluate_split(
+        out, extras = evaluator.evaluate_split(
             model=model,
             dataloader=dl,
             out_dir=cfg.predictions_dir,
             split_name=split,
+            min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
+            min_bbox_width_px=cfg.dataset.min_bbox_width_px,
+            min_bbox_height_px=cfg.dataset.min_bbox_height_px,
         )
-        report[split] = out.metrics
+
+        # Add a few coverage fields into the split report.
+        metrics = dict(out.metrics)
+        metrics["num_frames_total"] = float(extras.num_frames_total)
+        metrics["num_frames_covered"] = float(extras.num_frames_covered)
+        metrics["num_frames_uncovered"] = float(extras.num_frames_uncovered)
+        report[split] = metrics
 
     metrics_path = cfg.eval_reports_dir / "metrics.json"
     write_json(
@@ -125,7 +141,6 @@ def main() -> None:
         plots_dir = cfg.eval_reports_dir / "plots"
         ensure_dir(plots_dir)
 
-        # Training curves (if training log exists)
         plot_training_curves(
             train_log_csv=cfg.eval_reports_dir / "train_log.csv",
             out_path=plots_dir / "training_curves.png",

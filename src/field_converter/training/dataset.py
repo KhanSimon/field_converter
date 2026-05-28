@@ -78,6 +78,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         max_samples_per_sequence: Optional[int] = None,
         subsample_stride: int = 1,
         min_in_image_joints_ratio: Optional[float] = None,
+        min_bbox_width_px: Optional[float] = None,
+        min_bbox_height_px: Optional[float] = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.split = split
@@ -89,9 +91,16 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         self.min_in_image_joints_ratio = (
             None if min_in_image_joints_ratio is None else float(min_in_image_joints_ratio)
         )
+        self.min_bbox_width_px = None if min_bbox_width_px is None else float(min_bbox_width_px)
+        self.min_bbox_height_px = None if min_bbox_height_px is None else float(min_bbox_height_px)
 
         if self.min_in_image_joints_ratio is not None and not (0.0 <= self.min_in_image_joints_ratio <= 1.0):
             raise ValueError("min_in_image_joints_ratio must be in [0,1] or None")
+
+        if self.min_bbox_width_px is not None and self.min_bbox_width_px <= 0:
+            raise ValueError("min_bbox_width_px must be > 0 or None")
+        if self.min_bbox_height_px is not None and self.min_bbox_height_px <= 0:
+            raise ValueError("min_bbox_height_px must be > 0 or None")
 
         if self.subsample_stride < 1:
             raise ValueError("subsample_stride must be >= 1")
@@ -165,6 +174,22 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
 
             with np.load(path, allow_pickle=True) as npz:
                 valid_mask = np.asarray(npz["valid_mask"], dtype=bool)
+
+                if self.min_bbox_width_px is not None or self.min_bbox_height_px is not None:
+                    boxes = np.asarray(npz["boxes_xyxy"], dtype=np.float32)  # (N,T,4)
+                    if boxes.ndim != 3 or boxes.shape[-1] != 4:
+                        raise ValueError(f"Expected boxes_xyxy to have shape (N,T,4), got shape={boxes.shape}")
+
+                    w = boxes[..., 2] - boxes[..., 0]
+                    h = boxes[..., 3] - boxes[..., 1]
+                    ok = np.isfinite(w) & np.isfinite(h)
+
+                    if self.min_bbox_width_px is not None:
+                        ok &= w >= float(self.min_bbox_width_px)
+                    if self.min_bbox_height_px is not None:
+                        ok &= h >= float(self.min_bbox_height_px)
+
+                    valid_mask = valid_mask & ok
 
                 if self.min_in_image_joints_ratio is not None:
                     valid_joints = np.asarray(npz["valid_joints"], dtype=bool)  # (N,T,J)

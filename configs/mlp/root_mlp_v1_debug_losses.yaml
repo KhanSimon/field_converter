@@ -3,7 +3,7 @@
 # - `data_dir: auto` -> ps.DATA_DIR / "features_normalized"
 # - outputs go to `output_dir/<subfolders>/<run_name>/...`
 
-run_name: root_mlp_v1_train
+run_name: root_mlp_v1_debug_losses
 seed: 123
 
 device: auto  # auto | cpu | cuda
@@ -16,19 +16,16 @@ input_config:
   use_x2d_img: true
   use_x2d_box: true
   use_bbox_feat: true
-  bbox_clean_or_noisy: clean         # clean | noisy
+  bbox_clean_or_noisy: noisy         # clean | noisy
   use_cam_feat: true
   cam_feat_type: boosted_clean       # base_clean | base_noisy | boosted_clean | boosted_noisy
   use_valid_joints_as_input: true # indique pour chaque joint s'il est valide dans la frame. 
 
 dataset:
   # Debug helpers (optional)
-  max_sequences: null                   # null for full split, en mode debug : 2 
-  max_samples_per_sequence: null     # null for full (1 sample = une frame d'un joueur), en mode debug : 2000
+  max_sequences: 2                   # null for full split, en mode debug : 2 
+  max_samples_per_sequence: 2000     # null for full (1 sample = une frame d'un joueur), en mode debug : 2000
   subsample_stride: 1                # >=1 on prend 1 frame sur subsample_stride, 1 pour pas de subsampling
-  # Filtering (optional): fraction of valid joints whose 2D GT lies inside the image
-  # Helps remove off-frame players that can cause degenerate bbox-normalized inputs.
-  min_in_image_joints_ratio: 0.9    # e.g. 0.5, null to disable
 
 model:
   hidden_dims: [256, 256, 128]
@@ -42,25 +39,24 @@ optimizer:
 training:
   batch_size: 512
   epochs: 30
-  num_workers: 2 # nombre de workers (chargement CPU/GPU) pour le dataloader d'évaluation
-  group_batches_by_sequence: true # important pour ne pas faire de io très couteux en temps de run 
+  num_workers: 4 # nombre de workers (chargement CPU/GPU) pour le dataloader d'évaluation
   grad_clip_norm: 1.0                # null to disable
   early_stopping_patience: 10
 
 loss_weights:
   root: 1.0 # laisser 1, ce qu'on apprend vraiment
   #smooth L1 entre la root prédite et la root GT
-  cam3d: 0 # entre 0.1 et 1 
+  cam3d: 0.3 # entre 0.1 et 1 
   # smooth L1 entre la cam3d prédite et la cam3d GT (pour aider à apprendre une meilleure représentation interne)
   #pondérée par les masks, les joints qui ne sont pas visibles ne contribuent pas à la loss. 
-  proj: 0 # sensible (pixel), entre 0.01 et 0.1
+  proj: 0.03 # sensible (pixel), entre 0.01 et 0.1
   # smooth L1 entre les projections 2D des joints rootés (avec la root GT) et les projections 2D des joints rootés (avec la root prédite). 
   #pondérée par les masks
 
 eval:
   splits: [valid, test]
   batch_size: 1024
-  num_workers: 2 # nombre de workers (chargement CPU/GPU) pour le dataloader d'évaluation
+  num_workers: 4 # nombre de workers (chargement CPU/GPU) pour le dataloader d'évaluation
   save_predictions_npz: true
   save_predictions_csv: true
 
@@ -72,3 +68,5 @@ plots:
   person_idx: null # index du joueur dans la sequence
   # si null : le code choisit le joueur le plus visible dans la sequence
   num_frames_overlay: 6
+  show_sam2d_overlay: true
+  num_players_per_subplot: null

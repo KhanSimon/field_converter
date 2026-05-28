@@ -31,6 +31,11 @@ Generated outputs::
     data/Y_2d_gt/{sequence}.npy
     data/features/{sequence}.npz
 
+Optional SAM3DBody inputs are folded directly into ``data/features/{sequence}.npz``:
+
+    data/skel_2d_sam3dbody_from_bbox_gt/{sequence}.npy|npz
+    data/skel_3d_sam3dbody_from_bbox_gt/{sequence}.npy|npz
+
 Conventions
 -----------
 
@@ -61,6 +66,7 @@ import numpy as np
 
 
 PelvisMode = Literal["hips_mean", "joint8"]
+FOLDER = "features2"
 
 
 @dataclass
@@ -98,6 +104,8 @@ class FeatureCreator:
         Name of the text file listing training sequences.
     pelvis_mode:
         ``"hips_mean"`` uses the mean of joints 9 and 12 as pelvis.
+        In that mode, GT joint 8 is also replaced by the same hips mean before
+        creating labels and projections.
         ``"joint8"`` uses joint 8 directly.
         Indices are assumed to be zero-based.
     margin_for_boxes:
@@ -112,7 +120,7 @@ class FeatureCreator:
     data_dir: Optional[Path | str] = None
     image_size: Optional[Tuple[int, int]] = None
     sequences_file: str = "sequences_gt.txt"
-    pelvis_mode: PelvisMode = "hips_mean"
+    pelvis_mode: PelvisMode = "joint8"
     margin_for_boxes: float = 0.15
     noise: NoiseConfig = field(default_factory=NoiseConfig)
     seed: int = 12345
@@ -147,7 +155,11 @@ class FeatureCreator:
             "Y_cam_gt": self.data_dir / "Y_cam_gt",
             "Y_root_cam_gt": self.data_dir / "Y_root_cam_gt",
             "Y_2d_gt": self.data_dir / "Y_2d_gt",
-            "features": self.data_dir / "features",
+            "features": self.data_dir / FOLDER,
+        }
+        self.sam3dbody_from_bbox_gt_dirs = {
+            "skel_2d_sam3dbody_from_bbox_gt": self.data_dir / "skel_2d_sam3dbody_from_bbox_gt",
+            "skel_3d_sam3dbody_from_bbox_gt": self.data_dir / "skel_3d_sam3dbody_from_bbox_gt",
         }
 
     # ---------------------------------------------------------------------
@@ -236,6 +248,8 @@ class FeatureCreator:
             - ``Y_rel_cam_gt``: ``(N, T, J, 3)`` GT root-relative camera-space joints
             - ``Y_root_cam_gt``: ``(N, T, 3)`` GT pelvis/root in camera-space
             - ``Y_2d_gt``: ``(N, T, J, 2)`` projected GT 2D joints in pixels
+            - ``skel_2d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 2)`` SAM2D pixels
+            - ``skel_3d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 3)`` SAM3D camera convention
         """
         rng = self._rng_for_sequence(sequence)
 
@@ -257,6 +271,8 @@ class FeatureCreator:
                 f"{sequence}: expected 25 joints, got {J}. Code will still run, "
                 "but verify your mapping."
             )
+        if self.pelvis_mode == "hips_mean":
+            X_world_gt = self.replace_joint8_with_hips_mean(X_world_gt)
 
         X_cam_gt = self.world_to_camera(X_world_gt, R, t)  # (N,T,J,3)
         root_cam_gt = self.compute_pelvis(X_cam_gt, mode=self.pelvis_mode)  # (N,T,3)
@@ -291,7 +307,7 @@ class FeatureCreator:
         valid_joints = valid_joints_3d & valid_depth & valid_joints_proj
         valid_mask = valid_box & valid_joints.any(axis=-1) & np.isfinite(root_cam_gt).all(axis=-1)
 
-        return {
+        features = {
             "bbox_feat": bbox_feat_noisy.astype(np.float32),
             "bbox_feat_clean": bbox_feat_clean.astype(np.float32),
             "cam_feat_base_clean": cam_feat_base_clean.astype(np.float32),
@@ -309,9 +325,11 @@ class FeatureCreator:
             "K": K.astype(np.float32),
             "R": R.astype(np.float32),
             "t": t.astype(np.float32),
-            "k": k.astype(np.float32),
+            "k": self._truncate_k(k).astype(np.float32),
             "image_size": np.array([W, H], dtype=np.int32),
         }
+        self.add_sam3dbody_from_bbox_gt_features(sequence, features, T=T)
+        return features
 
     def save_individual_features(
         self,
@@ -356,6 +374,29 @@ class FeatureCreator:
             "bbox_feat": "cx/W, cy/H, w/W, h/H, w/h",
             "cam_feat_base": "fx/W, fy/H, cx/W, cy/H, k1, k2",
             "cam_feat_boosted": "base + camera_center_world(3) + camera_forward_world(3)",
+            "gt_joint8": (
+                "replaced by mean(joint9, joint12) before label creation "
+                "when pelvis_mode='hips_mean'"
+            ),
+            "k": "stored with the last 3 distortion columns removed when present",
+            "sam3dbody_from_bbox_gt": {
+                "skel_2d_sam3dbody_from_bbox_gt": "(N,T,J,2), image coordinates, no sign flip",
+                "skel_3d_sam3dbody_from_bbox_gt": (
+                    "(N,T,J,3), orientation checked against Y_rel_cam_gt; "
+                    "applied sign is stored in sam3d_orientation_sign"
+                ),
+                "sam3d_orientation_sign": self._meta_scalar(features, "sam3d_orientation_sign", default=None),
+                "sam3d_orientation_mpjpe_keep": self._meta_scalar(
+                    features,
+                    "sam3d_orientation_mpjpe_keep",
+                    default=None,
+                ),
+                "sam3d_orientation_mpjpe_flip": self._meta_scalar(
+                    features,
+                    "sam3d_orientation_mpjpe_flip",
+                    default=None,
+                ),
+            },
             "extrinsic_convention": "X_cam_col = R @ X_world_col + t",
         }
 
@@ -391,6 +432,118 @@ class FeatureCreator:
             sequence,
             keys=("joints_3d", "joints3d", "X_world", "X_world_gt", "arr_0"),
         )
+
+    def add_sam3dbody_from_bbox_gt_features(
+        self,
+        sequence: str,
+        features: Dict[str, np.ndarray],
+        T: int,
+    ) -> None:
+        """Add optional SAM3DBody arrays from bbox GT folders to the consolidated payload."""
+        sam2d_key = "skel_2d_sam3dbody_from_bbox_gt"
+        sam3d_key = "skel_3d_sam3dbody_from_bbox_gt"
+
+        sam2d = self._load_optional_sequence_array(
+            self.sam3dbody_from_bbox_gt_dirs[sam2d_key],
+            sequence,
+        )
+        if sam2d is not None:
+            features[sam2d_key] = self._ensure_ntjc(
+                sam2d,
+                T=T,
+                C=2,
+                name=f"{sequence} {sam2d_key}",
+            ).astype(np.float32)
+            features["sam2d_layout_fixed"] = np.array(True, dtype=np.bool_)
+
+        sam3d = self._load_optional_sequence_array(
+            self.sam3dbody_from_bbox_gt_dirs[sam3d_key],
+            sequence,
+        )
+        if sam3d is not None:
+            sam3d_ntj3 = self._ensure_ntjc(
+                sam3d,
+                T=T,
+                C=3,
+                name=f"{sequence} {sam3d_key}",
+            )
+            sam3d_oriented, sign, keep_mpjpe, flip_mpjpe = self.ensure_sam3d_camera_orientation(
+                sam3d_ntj3,
+                gt_rel_cam=features.get("Y_rel_cam_gt"),
+                valid_joints=features.get("valid_joints"),
+            )
+            features[sam3d_key] = sam3d_oriented.astype(np.float32)
+            features["sam3d_orientation_sign"] = np.array(sign, dtype=np.int8)
+            features["sam3d_orientation_mpjpe_keep"] = np.array(keep_mpjpe, dtype=np.float32)
+            features["sam3d_orientation_mpjpe_flip"] = np.array(flip_mpjpe, dtype=np.float32)
+            features["sam3d_convention_fixed"] = np.array(sign == -1, dtype=np.bool_)
+
+    def ensure_sam3d_camera_orientation(
+        self,
+        sam3d_ntj3: np.ndarray,
+        *,
+        gt_rel_cam: Optional[np.ndarray],
+        valid_joints: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, int, float, float]:
+        """
+        Keep or globally flip SAM3D so its relative pose matches GT camera-relative joints.
+
+        Some SAM3D exports can differ by a global sign flip. We avoid a hard-coded
+        convention by comparing pelvis-centered SAM against ``Y_rel_cam_gt`` and
+        choosing the lower MPJPE between ``sam`` and ``-sam``.
+        """
+        if gt_rel_cam is None:
+            warnings.warn("Y_rel_cam_gt missing; keeping SAM3D orientation unchanged.")
+            return sam3d_ntj3, 1, float("nan"), float("nan")
+
+        gt_rel = np.asarray(gt_rel_cam, dtype=np.float64)
+        sam = np.asarray(sam3d_ntj3, dtype=np.float64)
+        if gt_rel.shape != sam.shape:
+            warnings.warn(
+                f"Cannot check SAM3D orientation: shape mismatch sam={sam.shape}, gt_rel={gt_rel.shape}. "
+                "Keeping SAM3D orientation unchanged."
+            )
+            return sam3d_ntj3, 1, float("nan"), float("nan")
+
+        sam_root = self.compute_pelvis(sam, mode=self.pelvis_mode)
+        sam_rel = sam - sam_root[:, :, None, :]
+
+        mask = np.isfinite(sam_rel).all(axis=-1) & np.isfinite(gt_rel).all(axis=-1)
+        if valid_joints is not None:
+            vj = np.asarray(valid_joints, dtype=bool)
+            if vj.shape == mask.shape:
+                mask &= vj
+
+        if not np.any(mask):
+            warnings.warn("Cannot check SAM3D orientation: no finite valid joints. Keeping orientation unchanged.")
+            return sam3d_ntj3, 1, float("nan"), float("nan")
+
+        keep_mpjpe = self._masked_mpjpe(sam_rel, gt_rel, mask)
+        flip_mpjpe = self._masked_mpjpe(-sam_rel, gt_rel, mask)
+        sign = -1 if flip_mpjpe < keep_mpjpe else 1
+        return (sign * sam3d_ntj3).astype(np.float32), sign, keep_mpjpe, flip_mpjpe
+
+    @staticmethod
+    def _masked_mpjpe(A: np.ndarray, B: np.ndarray, mask: np.ndarray) -> float:
+        """Mean Euclidean joint error over a boolean ``(N,T,J)`` mask."""
+        diff = np.asarray(A, dtype=np.float64) - np.asarray(B, dtype=np.float64)
+        err = np.linalg.norm(diff, axis=-1)
+        return float(err[np.asarray(mask, dtype=bool)].mean())
+
+    @staticmethod
+    def _meta_scalar(features: Dict[str, np.ndarray], key: str, default: Any = None) -> Any:
+        """Return a JSON-serializable scalar from a feature payload."""
+        if key not in features:
+            return default
+        value = np.asarray(features[key])
+        if value.shape != ():
+            return default
+        item = value.item()
+        if isinstance(item, np.generic):
+            item = item.item()
+        if isinstance(item, float) and not np.isfinite(item):
+            return None
+        return item
 
     # ---------------------------------------------------------------------
     # Core geometry
@@ -449,6 +602,18 @@ class FeatureCreator:
         if mode == "joint8":
             return X[..., 8, :]
         raise ValueError(f"Unknown pelvis mode: {mode}")
+
+    @staticmethod
+    def replace_joint8_with_hips_mean(X: np.ndarray) -> np.ndarray:
+        """Return a copy where joint 8 is replaced by mean(joint 9, joint 12)."""
+        X = np.asarray(X)
+        if X.shape[-2] <= 12:
+            raise ValueError(
+                f"hips_mean requires joints 8, 9 and 12, but got joint dimension {X.shape[-2]}"
+            )
+        out = X.copy()
+        out[..., 8, :] = 0.5 * (out[..., 9, :] + out[..., 12, :])
+        return out
 
     def project_world_to_image(
         self,
@@ -839,6 +1004,33 @@ class FeatureCreator:
         raise FileNotFoundError(f"No .npy or .npz file found for {sequence} in {folder}")
 
     @staticmethod
+    def _load_optional_sequence_array(folder: Path, sequence: str) -> Optional[np.ndarray]:
+        npy = folder / f"{sequence}.npy"
+        npz = folder / f"{sequence}.npz"
+        if npy.exists():
+            return np.asarray(np.load(npy, allow_pickle=True))
+        if npz.exists():
+            with np.load(npz, allow_pickle=True) as data:
+                if "arr_0" in data.files:
+                    return np.asarray(data["arr_0"])
+                if len(data.files) == 1:
+                    return np.asarray(data[data.files[0]])
+                raise KeyError(
+                    f"Ambiguous npz content for {npz}; keys={list(data.files)}"
+                )
+        return None
+
+    @staticmethod
+    def _truncate_k(arr: np.ndarray) -> np.ndarray:
+        """Remove the last 3 columns of k when the array has distortion extras."""
+        arr = np.asarray(arr)
+        if arr.ndim != 2:
+            return arr
+        if arr.shape[1] < 3:
+            return arr
+        return arr[:, :-3]
+
+    @staticmethod
     def _ensure_ntj3(arr: np.ndarray, T: int, name: str) -> np.ndarray:
         """
         Ensure joints are shaped ``(N,T,J,3)``.
@@ -858,6 +1050,28 @@ class FeatureCreator:
             return arr[None].astype(np.float32)
         raise ValueError(
             f"{name}: expected (N,T,J,3), (T,N,J,3), or (T,J,3); got {arr.shape}"
+        )
+
+    @staticmethod
+    def _ensure_ntjc(arr: np.ndarray, T: int, C: int, name: str) -> np.ndarray:
+        """
+        Ensure skeleton arrays are shaped ``(N,T,J,C)``.
+
+        Accepts common alternatives:
+        - ``(N,T,J,C)``
+        - ``(T,N,J,C)``
+        - ``(T,J,C)`` for a single player
+        """
+        arr = np.asarray(arr)
+        if arr.ndim == 4 and arr.shape[-1] == C:
+            if arr.shape[1] == T:
+                return arr.astype(np.float32)
+            if arr.shape[0] == T:
+                return arr.transpose(1, 0, 2, 3).astype(np.float32)
+        if arr.ndim == 3 and arr.shape[-1] == C and arr.shape[0] == T:
+            return arr[None].astype(np.float32)
+        raise ValueError(
+            f"{name}: expected (N,T,J,{C}), (T,N,J,{C}), or (T,J,{C}); got {arr.shape}"
         )
 
     @staticmethod
@@ -896,7 +1110,7 @@ if __name__ == "__main__":
         seed=12345,
     )
     creator.create_all(
-        overwrite=False,
+        overwrite=True,
         rebuild_boxes_from_gt=False,
         save_individual_folders=True,
         save_npz=True,
