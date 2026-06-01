@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import Dataset
 
 from field_converter.training.config import CamFeatTypeStr, InputConfig
+from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
 from field_converter.training.tcn.config import PadModeStr
 
 
@@ -36,58 +37,6 @@ def _cam_feat_key(cam_feat_type: CamFeatTypeStr) -> str:
 
 def _bbox_feat_key(clean_or_noisy: Literal["clean", "noisy"]) -> str:
     return "bbox_feat_clean" if clean_or_noisy == "clean" else "bbox_feat"
-
-
-def _filter_valid_mask_in_image(
-    *,
-    valid_mask: np.ndarray,
-    valid_joints: np.ndarray,
-    Y_2d_gt: np.ndarray,
-    image_size: np.ndarray,
-    min_in_image_joints_ratio: float,
-) -> np.ndarray:
-    """Apply the same in-image validity filter as the frame-wise dataset."""
-
-    image_size = np.asarray(image_size, dtype=np.float32).reshape(-1)
-    if image_size.size != 2:
-        raise ValueError(f"Expected image_size to have 2 values (W,H), got shape={image_size.shape}")
-    W, H = float(image_size[0]), float(image_size[1])
-
-    uv_finite = np.isfinite(Y_2d_gt).all(axis=-1)  # (P,T,J)
-    u = Y_2d_gt[..., 0]
-    v = Y_2d_gt[..., 1]
-    in_image = uv_finite & (u >= 0.0) & (u < W) & (v >= 0.0) & (v < H)
-
-    in_image_valid = valid_joints & in_image
-    num = in_image_valid.sum(axis=-1)  # (P,T)
-    den = np.maximum(valid_joints.sum(axis=-1), 1)  # (P,T)
-    ratio = num / den
-
-    return valid_mask & (ratio >= float(min_in_image_joints_ratio))
-
-
-def _filter_valid_mask_bbox_size(
-    *,
-    valid_mask: np.ndarray,
-    boxes_xyxy: np.ndarray,
-    min_bbox_width_px: Optional[float],
-    min_bbox_height_px: Optional[float],
-) -> np.ndarray:
-    if min_bbox_width_px is None and min_bbox_height_px is None:
-        return valid_mask
-
-    boxes = np.asarray(boxes_xyxy, dtype=np.float32)
-    if boxes.ndim != 3 or boxes.shape[-1] != 4:
-        raise ValueError(f"Expected boxes_xyxy to have shape (P,T,4), got shape={boxes.shape}")
-
-    w = boxes[..., 2] - boxes[..., 0]
-    h = boxes[..., 3] - boxes[..., 1]
-    ok = np.isfinite(w) & np.isfinite(h)
-    if min_bbox_width_px is not None:
-        ok &= w >= float(min_bbox_width_px)
-    if min_bbox_height_px is not None:
-        ok &= h >= float(min_bbox_height_px)
-    return valid_mask & ok
 
 
 class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
@@ -121,6 +70,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         min_in_image_joints_ratio: Optional[float] = None,
         min_bbox_width_px: Optional[float] = None,
         min_bbox_height_px: Optional[float] = None,
+        min_bbox_margin_px: Optional[float] = None,
         filter_by_min_valid_ratio: bool = True,
     ) -> None:
         self.data_dir = Path(data_dir)
@@ -140,6 +90,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         )
         self.min_bbox_width_px = None if min_bbox_width_px is None else float(min_bbox_width_px)
         self.min_bbox_height_px = None if min_bbox_height_px is None else float(min_bbox_height_px)
+        self.min_bbox_margin_px = None if min_bbox_margin_px is None else float(min_bbox_margin_px)
         self.filter_by_min_valid_ratio = bool(filter_by_min_valid_ratio)
 
         if self.window_size <= 0:
@@ -157,6 +108,8 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             raise ValueError("min_bbox_width_px must be > 0 or None")
         if self.min_bbox_height_px is not None and self.min_bbox_height_px <= 0:
             raise ValueError("min_bbox_height_px must be > 0 or None")
+        if self.min_bbox_margin_px is not None and self.min_bbox_margin_px < 0:
+            raise ValueError("min_bbox_margin_px must be >= 0 or None")
 
         self.sequences = self._load_split_sequences(self.data_dir / "split.json", split)
         if self.max_sequences is not None:
@@ -208,8 +161,13 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         if self.min_in_image_joints_ratio is not None:
             keys.add("image_size")
 
-        if self.min_bbox_width_px is not None or self.min_bbox_height_px is not None:
+        if (
+            self.min_bbox_width_px is not None
+            or self.min_bbox_height_px is not None
+            or self.min_bbox_margin_px is not None
+        ):
             keys.add("boxes_xyxy")
+            keys.add("image_size")
 
         # Optional inputs.
         if self.input_config.use_x2d_img:
@@ -239,20 +197,27 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 if valid_mask.ndim != 2:
                     raise ValueError(f"Expected valid_mask with shape (P,T), got {valid_mask.shape} in {path}")
 
-                if self.min_bbox_width_px is not None or self.min_bbox_height_px is not None:
+                if (
+                    self.min_bbox_width_px is not None
+                    or self.min_bbox_height_px is not None
+                    or self.min_bbox_margin_px is not None
+                ):
                     boxes = np.asarray(npz["boxes_xyxy"], dtype=np.float32)
-                    valid_mask = _filter_valid_mask_bbox_size(
+                    image_size = np.asarray(npz["image_size"], dtype=np.float32)
+                    valid_mask = filter_valid_mask_bbox_geometry(
                         valid_mask=valid_mask,
                         boxes_xyxy=boxes,
+                        image_size=image_size,
                         min_bbox_width_px=self.min_bbox_width_px,
                         min_bbox_height_px=self.min_bbox_height_px,
+                        min_bbox_margin_px=self.min_bbox_margin_px,
                     )
 
                 if self.min_in_image_joints_ratio is not None:
                     valid_joints = np.asarray(npz["valid_joints"], dtype=bool)  # (P,T,J)
                     Y_2d_gt = np.asarray(npz["Y_2d_gt"], dtype=np.float32)  # (P,T,J,2)
                     image_size = np.asarray(npz["image_size"], dtype=np.float32)
-                    valid_mask = _filter_valid_mask_in_image(
+                    valid_mask = filter_valid_mask_in_image(
                         valid_mask=valid_mask,
                         valid_joints=valid_joints,
                         Y_2d_gt=Y_2d_gt,
@@ -331,20 +296,27 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         # Precompute the effective valid_mask used for losses/metrics.
         valid_mask = np.asarray(payload["valid_mask"], dtype=bool)
 
-        if self.min_bbox_width_px is not None or self.min_bbox_height_px is not None:
+        if (
+            self.min_bbox_width_px is not None
+            or self.min_bbox_height_px is not None
+            or self.min_bbox_margin_px is not None
+        ):
             boxes = np.asarray(payload["boxes_xyxy"], dtype=np.float32)
-            valid_mask = _filter_valid_mask_bbox_size(
+            image_size = np.asarray(payload["image_size"], dtype=np.float32)
+            valid_mask = filter_valid_mask_bbox_geometry(
                 valid_mask=valid_mask,
                 boxes_xyxy=boxes,
+                image_size=image_size,
                 min_bbox_width_px=self.min_bbox_width_px,
                 min_bbox_height_px=self.min_bbox_height_px,
+                min_bbox_margin_px=self.min_bbox_margin_px,
             )
 
         if self.min_in_image_joints_ratio is not None:
             valid_joints = np.asarray(payload["valid_joints"], dtype=bool)
             Y_2d_gt = np.asarray(payload["Y_2d_gt"], dtype=np.float32)
             image_size = np.asarray(payload["image_size"], dtype=np.float32)
-            valid_mask = _filter_valid_mask_in_image(
+            valid_mask = filter_valid_mask_in_image(
                 valid_mask=valid_mask,
                 valid_joints=valid_joints,
                 Y_2d_gt=Y_2d_gt,
@@ -481,6 +453,26 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 _nan_to_num_inplace(Y_cam_gt[:T])
                 _nan_to_num_inplace(Y_2d_gt[:T])
 
+        invalid_frame_mask = ~valid_mask
+
+        def _zero_invalid_frames(x: np.ndarray) -> np.ndarray:
+            if not invalid_frame_mask.any():
+                return x
+            x = x.copy()
+            x[invalid_frame_mask] = 0.0
+            return x
+
+        # Frames rejected by dataset filters can still be present as temporal
+        # context in a kept window. Zero them so invalid bbox/joint features do
+        # not drive the TCN activations while losses still use valid_mask.
+        if invalid_frame_mask.any():
+            x3d_sam = _zero_invalid_frames(x3d_sam)
+            root_gt = _zero_invalid_frames(root_gt)
+            Y_cam_gt = _zero_invalid_frames(Y_cam_gt)
+            Y_2d_gt = _zero_invalid_frames(Y_2d_gt)
+            valid_joints = valid_joints.copy()
+            valid_joints[invalid_frame_mask] = False
+
         # ------------------------------------------------------------------
         # Build per-frame input matrix x: (W, D)
         # ------------------------------------------------------------------
@@ -501,6 +493,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 if T > 0:
                     x2d_img[:T] = np.asarray(payload["skel_2d_sam3dbody_from_bbox_gt"][person_idx, :T], dtype=np.float32)
                     _nan_to_num_inplace(x2d_img[:T])
+            x2d_img = _zero_invalid_frames(x2d_img)
             parts.append(x2d_img.reshape(self.window_size, -1))
 
         if self.input_config.use_x2d_box:
@@ -515,6 +508,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 if T > 0:
                     x2d_box[:T] = np.asarray(payload["skel_2d_sam3dbody_from_bbox_gt_box"][person_idx, :T], dtype=np.float32)
                     _nan_to_num_inplace(x2d_box[:T])
+            x2d_box = _zero_invalid_frames(x2d_box)
             parts.append(x2d_box.reshape(self.window_size, -1))
 
         if self.input_config.use_bbox_feat:
@@ -530,6 +524,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 if T > 0:
                     bbox_feat[:T] = np.asarray(payload[bbox_key][person_idx, :T], dtype=np.float32)
                     _nan_to_num_inplace(bbox_feat[:T])
+            bbox_feat = _zero_invalid_frames(bbox_feat)
             parts.append(bbox_feat.reshape(self.window_size, -1))
 
         if self.input_config.use_cam_feat:
@@ -546,6 +541,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                 if T > 0:
                     cam_feat[:T] = np.asarray(payload[cam_key][:T], dtype=np.float32)
                     _nan_to_num_inplace(cam_feat[:T])
+            cam_feat = _zero_invalid_frames(cam_feat)
             parts.append(cam_feat.reshape(self.window_size, -1))
 
         if self.input_config.use_valid_joints_as_input:

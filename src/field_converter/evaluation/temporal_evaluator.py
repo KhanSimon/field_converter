@@ -4,15 +4,17 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 import torch
 from torch import nn
 
+from field_converter.evaluation.diagnostics import PredictionDiagnostics
 from field_converter.evaluation.evaluator import EvalOutputs
 from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.geometry.transforms import cam_to_world
+from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
 
@@ -58,30 +60,26 @@ def _masked_smooth_l1_sum_and_count(
     return float(per_step.sum().item()), count
 
 
-def _filter_valid_mask_in_image(
-    *,
-    valid_mask: np.ndarray,
-    valid_joints: np.ndarray,
-    Y_2d_gt: np.ndarray,
-    image_size: np.ndarray,
-    min_in_image_joints_ratio: float,
-) -> np.ndarray:
-    image_size = np.asarray(image_size, dtype=np.float32).reshape(-1)
-    if image_size.size != 2:
-        raise ValueError(f"Expected image_size to have 2 values (W,H), got shape={image_size.shape}")
-    W, H = float(image_size[0]), float(image_size[1])
+def _masked_smooth_l1_axis_sum_and_count(
+    pred: torch.Tensor,
+    gt: torch.Tensor,
+    mask: torch.Tensor,
+) -> Tuple[np.ndarray, int]:
+    if pred.shape != gt.shape:
+        raise ValueError(f"pred and gt must have the same shape, got {pred.shape} vs {gt.shape}")
+    if mask.shape != pred.shape[:-1]:
+        raise ValueError(f"mask must match pred without last dim, got mask={mask.shape} pred={pred.shape}")
+    if pred.shape[-1] != 3:
+        raise ValueError(f"Expected last dimension to be 3, got {pred.shape}")
 
-    uv_finite = np.isfinite(Y_2d_gt).all(axis=-1)  # (P,T,J)
-    u = Y_2d_gt[..., 0]
-    v = Y_2d_gt[..., 1]
-    in_image = uv_finite & (u >= 0.0) & (u < W) & (v >= 0.0) & (v < H)
+    finite = torch.isfinite(pred).all(dim=-1) & torch.isfinite(gt).all(dim=-1)
+    valid = mask.bool() & finite
+    count = int(valid.sum().item())
+    if count == 0:
+        return np.zeros((3,), dtype=np.float64), 0
 
-    in_image_valid = valid_joints & in_image
-    num = in_image_valid.sum(axis=-1)  # (P,T)
-    den = np.maximum(valid_joints.sum(axis=-1), 1)  # (P,T)
-    ratio = num / den
-
-    return valid_mask & (ratio >= float(min_in_image_joints_ratio))
+    per_coord = torch.nn.functional.smooth_l1_loss(pred[valid], gt[valid], reduction="none")
+    return _to_numpy(per_coord.sum(dim=0)).astype(np.float64), count
 
 
 class TemporalEvaluator:
@@ -117,6 +115,11 @@ class TemporalEvaluator:
         min_in_image_joints_ratio: Optional[float] = None,
         min_bbox_width_px: Optional[float] = None,
         min_bbox_height_px: Optional[float] = None,
+        min_bbox_margin_px: Optional[float] = None,
+        root_axis_weights: Optional[Sequence[float]] = None,
+        diagnostics_dir: Optional[Path] = None,
+        diagnostics_prefix: Optional[str] = None,
+        diagnostics_top_k: int = 100,
     ) -> Tuple[EvalOutputs, TemporalEvalExtras]:
         """Evaluate a temporal model on one split.
 
@@ -138,6 +141,11 @@ class TemporalEvaluator:
         dataset = dataloader.dataset
         sequences: List[str] = list(getattr(dataset, "sequences", []))
         seq_to_id = {s: i for i, s in enumerate(sequences)}
+        diagnostics = (
+            PredictionDiagnostics(seq_names=sequences, top_k=diagnostics_top_k)
+            if diagnostics_dir is not None
+            else None
+        )
 
         seq_lengths: Optional[List[int]] = getattr(dataset, "seq_lengths", None)
 
@@ -207,7 +215,7 @@ class TemporalEvaluator:
         acc_err_count = 0
 
         # Aggregated valid losses in normalized space
-        valid_loss_root = 0.0
+        valid_loss_root_axis = np.zeros((3,), dtype=np.float64)
         valid_loss_root_vel = 0.0
         valid_loss_root_acc = 0.0
         denom_root = 0
@@ -255,23 +263,24 @@ class TemporalEvaluator:
 
                 if min_in_image_joints_ratio is not None:
                     image_size = np.asarray(npz["image_size"], dtype=np.float32)
-                    valid_mask = _filter_valid_mask_in_image(
+                    valid_mask = filter_valid_mask_in_image(
                         valid_mask=valid_mask,
                         valid_joints=valid_joints,
                         Y_2d_gt=Y_2d_gt,
                         image_size=image_size,
                         min_in_image_joints_ratio=float(min_in_image_joints_ratio),
                     )
-                if min_bbox_width_px is not None or min_bbox_height_px is not None:
+                if min_bbox_width_px is not None or min_bbox_height_px is not None or min_bbox_margin_px is not None:
                     boxes = np.asarray(npz["boxes_xyxy"], dtype=np.float32)
-                    w = boxes[..., 2] - boxes[..., 0]
-                    h = boxes[..., 3] - boxes[..., 1]
-                    ok = np.isfinite(w) & np.isfinite(h)
-                    if min_bbox_width_px is not None:
-                        ok &= w >= float(min_bbox_width_px)
-                    if min_bbox_height_px is not None:
-                        ok &= h >= float(min_bbox_height_px)
-                    valid_mask = valid_mask & ok
+                    image_size = np.asarray(npz["image_size"], dtype=np.float32)
+                    valid_mask = filter_valid_mask_bbox_geometry(
+                        valid_mask=valid_mask,
+                        boxes_xyxy=boxes,
+                        image_size=image_size,
+                        min_bbox_width_px=min_bbox_width_px,
+                        min_bbox_height_px=min_bbox_height_px,
+                        min_bbox_margin_px=min_bbox_margin_px,
+                    )
 
             P, T = int(valid_mask.shape[0]), int(valid_mask.shape[1])
 
@@ -332,6 +341,23 @@ class TemporalEvaluator:
                 }
                 metrics_acc.update(batch=batch_t, root_pred_norm=root_pred_t, stats=stats_dev)
 
+                root_pred_m_t = stats_dev.denorm_root(root_pred_t)
+                root_gt_m_t = stats_dev.denorm_root(root_gt_t)
+                root_err_m_t = torch.linalg.norm(root_pred_m_t - root_gt_m_t, dim=-1)
+
+                if diagnostics is not None:
+                    n_frames = int(frames.size)
+                    diagnostics.update(
+                        seq_id=np.full((n_frames,), int(sid), dtype=np.int32),
+                        person_idx=np.full((n_frames,), int(pid), dtype=np.int32),
+                        frame_idx=frames.astype(np.int32, copy=False),
+                        root_pred_norm=root_pred_t,
+                        root_gt_norm=root_gt_t,
+                        root_pred_m=root_pred_m_t,
+                        root_gt_m=root_gt_m_t,
+                        root_error_m=root_err_m_t,
+                    )
+
                 # ---- Temporal errors (meters) on full timeline (masked)
                 pred_m_full = stats_dev.denorm_root(torch.from_numpy(pred_norm_full).to(self.device, dtype=torch.float32))
                 gt_m_full = stats_dev.denorm_root(
@@ -373,12 +399,12 @@ class TemporalEvaluator:
 
                 # We compute sums/counts so overall averages are correct. Index
                 # before the loss because invalid GT frames can contain NaNs.
-                loss_sum, count = _masked_smooth_l1_sum_and_count(
+                axis_sum, count = _masked_smooth_l1_axis_sum_and_count(
                     pred_norm_bt,
                     gt_norm_bt,
                     vm_bt & cov_bt,
                 )
-                valid_loss_root += loss_sum
+                valid_loss_root_axis += axis_sum
                 denom_root += count
 
                 # Velocity loss
@@ -407,17 +433,6 @@ class TemporalEvaluator:
                     # Save only valid frames that are covered by at least one window.
                     frames_save = frames
 
-                    root_pred_norm_save = pred_norm_full[frames_save]
-                    root_gt_norm_save = root_gt_norm[pid, frames_save]
-
-                    root_pred_norm_t = torch.from_numpy(root_pred_norm_save).to(self.device, dtype=torch.float32)
-                    root_gt_norm_t = torch.from_numpy(root_gt_norm_save).to(self.device, dtype=torch.float32)
-
-                    root_pred_m_t = stats_dev.denorm_root(root_pred_norm_t)
-                    root_gt_m_t = stats_dev.denorm_root(root_gt_norm_t)
-
-                    root_err_m_t = torch.linalg.norm(root_pred_m_t - root_gt_m_t, dim=-1)
-
                     R_save = torch.from_numpy(R_all[frames_save]).to(self.device, dtype=torch.float32)
                     t_save = torch.from_numpy(t_all[frames_save]).to(self.device, dtype=torch.float32)
 
@@ -429,8 +444,8 @@ class TemporalEvaluator:
                     person_chunks.append(np.full((n,), int(pid), dtype=np.int32))
                     frame_chunks.append(frames_save.astype(np.int32, copy=False))
 
-                    root_pred_norm_chunks.append(_to_numpy(root_pred_norm_t).astype(np.float32))
-                    root_gt_norm_chunks.append(_to_numpy(root_gt_norm_t).astype(np.float32))
+                    root_pred_norm_chunks.append(_to_numpy(root_pred_t).astype(np.float32))
+                    root_gt_norm_chunks.append(_to_numpy(root_gt_t).astype(np.float32))
 
                     root_pred_m_chunks.append(_to_numpy(root_pred_m_t).astype(np.float32))
                     root_gt_m_chunks.append(_to_numpy(root_gt_m_t).astype(np.float32))
@@ -448,7 +463,19 @@ class TemporalEvaluator:
             float(acc_err_sum / acc_err_count) if acc_err_count > 0 else float("nan")
         )
 
-        metrics["valid_loss_root"] = float(valid_loss_root / max(1, denom_root))
+        root_axis = valid_loss_root_axis / max(1, denom_root)
+        root_weights = np.ones((3,), dtype=np.float64)
+        if root_axis_weights is not None:
+            root_weights = np.asarray([float(v) for v in root_axis_weights], dtype=np.float64)
+            if root_weights.shape != (3,):
+                raise ValueError(f"root_axis_weights must contain exactly 3 values, got {root_axis_weights}")
+            if np.any(root_weights < 0.0) or float(root_weights.sum()) <= 0.0:
+                raise ValueError("root_axis_weights must be >= 0 and contain at least one positive value")
+
+        metrics["valid_loss_root_x"] = float(root_axis[0])
+        metrics["valid_loss_root_y"] = float(root_axis[1])
+        metrics["valid_loss_root_z"] = float(root_axis[2])
+        metrics["valid_loss_root"] = float(np.sum(root_axis * root_weights) / max(float(root_weights.sum()), 1e-12))
         metrics["valid_loss_root_vel"] = float(valid_loss_root_vel / max(1, denom_vel))
         metrics["valid_loss_root_acc"] = float(valid_loss_root_acc / max(1, denom_acc))
 
@@ -587,6 +614,12 @@ class TemporalEvaluator:
                             float(root_err_m_all[i]),
                         ]
                     )
+
+        if diagnostics is not None and diagnostics_dir is not None:
+            diagnostics.write(
+                out_dir=diagnostics_dir,
+                prefix=diagnostics_prefix or split_name,
+            )
 
         return (
             EvalOutputs(metrics=metrics, predictions_npz_path=predictions_npz_path, predictions_csv_path=predictions_csv_path),

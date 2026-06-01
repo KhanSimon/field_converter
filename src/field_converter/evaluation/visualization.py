@@ -180,8 +180,55 @@ def plot_training_curves(
                 return True
         return False
 
-    # Expected column order produced by training.trainer.train()
-    expected_header = [
+    # Headerless logs exist in older runs, so keep schemas for all supported
+    # train_log layouts instead of assuming only the newest one.
+    mlp_header = [
+        "epoch",
+        "train_loss_total",
+        "train_loss_root",
+        "train_loss_root_x",
+        "train_loss_root_y",
+        "train_loss_root_z",
+        "train_loss_cam3d",
+        "train_loss_proj",
+        "valid_loss_total",
+        "valid_loss_root",
+        "valid_loss_root_x",
+        "valid_loss_root_y",
+        "valid_loss_root_z",
+        "valid_loss_cam3d",
+        "valid_loss_proj",
+        "valid_root_error_mean_m",
+        "valid_MPJPE_cam_m",
+        "valid_MPJPE_world_m",
+        "valid_reprojection_error_mean_px",
+    ]
+    tcn_header = [
+        "epoch",
+        "train_loss_total",
+        "train_loss_root",
+        "train_loss_root_x",
+        "train_loss_root_y",
+        "train_loss_root_z",
+        "train_loss_root_vel",
+        "train_loss_root_acc",
+        "train_loss_cam3d",
+        "train_loss_proj",
+        "valid_loss_total",
+        "valid_loss_root",
+        "valid_loss_root_x",
+        "valid_loss_root_y",
+        "valid_loss_root_z",
+        "valid_loss_root_vel",
+        "valid_loss_root_acc",
+        "valid_root_error_mean_m",
+        "valid_MPJPE_cam_m",
+        "valid_MPJPE_world_m",
+        "valid_reprojection_error_mean_px",
+        "valid_root_velocity_error_mean_m",
+        "valid_root_acceleration_error_mean_m",
+    ]
+    legacy_mlp_header = [
         "epoch",
         "train_loss_total",
         "train_loss_root",
@@ -196,6 +243,31 @@ def plot_training_curves(
         "valid_MPJPE_world_m",
         "valid_reprojection_error_mean_px",
     ]
+    legacy_tcn_header = [
+        "epoch",
+        "train_loss_total",
+        "train_loss_root",
+        "train_loss_root_vel",
+        "train_loss_root_acc",
+        "train_loss_cam3d",
+        "train_loss_proj",
+        "valid_loss_total",
+        "valid_loss_root",
+        "valid_loss_root_vel",
+        "valid_loss_root_acc",
+        "valid_root_error_mean_m",
+        "valid_MPJPE_cam_m",
+        "valid_MPJPE_world_m",
+        "valid_reprojection_error_mean_px",
+        "valid_root_velocity_error_mean_m",
+        "valid_root_acceleration_error_mean_m",
+    ]
+    header_by_len = {
+        len(legacy_mlp_header): legacy_mlp_header,
+        len(legacy_tcn_header): legacy_tcn_header,
+        len(mlp_header): mlp_header,
+        len(tcn_header): tcn_header,
+    }
 
     rows: list[dict[str, str]] = []
     with train_log_csv.open("r", newline="", encoding="utf-8") as f:
@@ -219,7 +291,7 @@ def plot_training_curves(
         data_rows = all_rows[1:]
     else:
         # Headerless CSV: map by position if it matches the known schema.
-        header = expected_header if len(first) == len(expected_header) else [f"col_{i}" for i in range(len(first))]
+        header = header_by_len.get(len(first), [f"col_{i}" for i in range(len(first))])
         data_rows = all_rows
 
     for r in data_rows:
@@ -289,6 +361,12 @@ def plot_training_curves(
     extra_cols = {
         "train_loss_root": _maybe_col("train_loss_root"),
         "valid_loss_root": _maybe_col("valid_loss_root"),
+        "train_loss_root_x": _maybe_col("train_loss_root_x"),
+        "train_loss_root_y": _maybe_col("train_loss_root_y"),
+        "train_loss_root_z": _maybe_col("train_loss_root_z"),
+        "valid_loss_root_x": _maybe_col("valid_loss_root_x"),
+        "valid_loss_root_y": _maybe_col("valid_loss_root_y"),
+        "valid_loss_root_z": _maybe_col("valid_loss_root_z"),
         "train_loss_root_vel": _maybe_col("train_loss_root_vel"),
         "valid_loss_root_vel": _maybe_col("valid_loss_root_vel"),
         "train_loss_root_acc": _maybe_col("train_loss_root_acc"),
@@ -336,6 +414,12 @@ def plot_training_curves(
     for key, label in [
         ("train_loss_root", "train_root"),
         ("valid_loss_root", "valid_root"),
+        ("train_loss_root_x", "train_root_x"),
+        ("train_loss_root_y", "train_root_y"),
+        ("train_loss_root_z", "train_root_z"),
+        ("valid_loss_root_x", "valid_root_x"),
+        ("valid_loss_root_y", "valid_root_y"),
+        ("valid_loss_root_z", "valid_root_z"),
         ("train_loss_root_vel", "train_root_vel"),
         ("valid_loss_root_vel", "valid_root_vel"),
         ("train_loss_root_acc", "train_root_acc"),

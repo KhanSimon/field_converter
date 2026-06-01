@@ -61,6 +61,7 @@ def main() -> None:
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+        min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
     )
     valid_ds = NormalizedFrameDataset(
         data_dir=cfg.data_dir,
@@ -73,6 +74,7 @@ def main() -> None:
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+        min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
     )
 
     pin_memory = device.type == "cuda"
@@ -152,6 +154,7 @@ def main() -> None:
         grad_clip_norm=cfg.training.grad_clip_norm,
         early_stopping_patience=cfg.training.early_stopping_patience,
         w_root=cfg.loss_weights.root,
+        root_axis_weights=cfg.loss_weights.root_axis_weights,
         w_cam3d=cfg.loss_weights.cam3d,
         w_proj=cfg.loss_weights.proj,
         checkpoints_dir=cfg.checkpoints_dir,

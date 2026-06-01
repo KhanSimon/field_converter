@@ -3,13 +3,19 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from field_converter.evaluation.diagnostics import (
+    append_train_batch_diagnostic,
+    build_train_batch_diagnostic,
+    compute_grad_norm,
+)
 from field_converter.evaluation.temporal_evaluator import TemporalEvaluator
 from field_converter.losses.projection_losses import loss_reprojection
 from field_converter.losses.root_losses import loss_cam3d
@@ -17,6 +23,7 @@ from field_converter.losses.temporal_losses import (
     loss_root_acceleration,
     loss_root_masked_smooth_l1,
     loss_root_velocity,
+    masked_smooth_l1_axis_mean,
 )
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
@@ -62,6 +69,7 @@ def train_tcn(
     grad_clip_norm: Optional[float],
     early_stopping_patience: int,
     w_root: float,
+    root_axis_weights: Sequence[float],
     w_root_vel: float,
     w_root_acc: float,
     w_cam3d: float,
@@ -69,11 +77,13 @@ def train_tcn(
     min_in_image_joints_ratio: Optional[float],
     min_bbox_width_px: Optional[float],
     min_bbox_height_px: Optional[float],
+    min_bbox_margin_px: Optional[float],
     checkpoints_dir: Path,
     train_log_csv: Path,
 ) -> TrainerState:
     ensure_dir(checkpoints_dir)
     ensure_dir(train_log_csv.parent)
+    diagnostics_dir = train_log_csv.parent / "diagnostics"
 
     model.to(device)
     stats = stats.to(device)
@@ -97,12 +107,18 @@ def train_tcn(
                     "epoch",
                     "train_loss_total",
                     "train_loss_root",
+                    "train_loss_root_x",
+                    "train_loss_root_y",
+                    "train_loss_root_z",
                     "train_loss_root_vel",
                     "train_loss_root_acc",
                     "train_loss_cam3d",
                     "train_loss_proj",
                     "valid_loss_total",
                     "valid_loss_root",
+                    "valid_loss_root_x",
+                    "valid_loss_root_y",
+                    "valid_loss_root_z",
                     "valid_loss_root_vel",
                     "valid_loss_root_acc",
                     "valid_root_error_mean_m",
@@ -124,13 +140,16 @@ def train_tcn(
             n_batches = 0
             loss_total_sum = 0.0
             loss_root_sum = 0.0
+            loss_root_axis_sum = np.zeros((3,), dtype=np.float64)
             loss_vel_sum = 0.0
             loss_acc_sum = 0.0
             loss_cam3d_sum = 0.0
             loss_proj_sum = 0.0
+            worst_batch_loss = float("-inf")
+            worst_batch_diagnostic: Optional[dict[str, Any]] = None
 
             pbar = tqdm(train_loader, desc=f"train epoch {epoch}")
-            for batch in pbar:
+            for batch_idx, batch in enumerate(pbar):
                 batch = {
                     k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
                     for k, v in batch.items()
@@ -143,7 +162,8 @@ def train_tcn(
                 optimizer.zero_grad(set_to_none=True)
                 root_pred = model(x).to(dtype=torch.float32)
 
-                l_root = loss_root_masked_smooth_l1(root_pred, root_gt, valid_mask)
+                l_root_axis = masked_smooth_l1_axis_mean(root_pred, root_gt, valid_mask)
+                l_root = loss_root_masked_smooth_l1(root_pred, root_gt, valid_mask, axis_weights=root_axis_weights)
                 l_vel = loss_root_velocity(root_pred, root_gt, valid_mask)
                 l_acc = loss_root_acceleration(root_pred, root_gt, valid_mask)
 
@@ -196,12 +216,44 @@ def train_tcn(
                 )
 
                 loss_total.backward()
+                grad_norm: Optional[float] = None
                 if grad_clip_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(grad_clip_norm))
+                    grad_norm_t = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(grad_clip_norm))
+                    grad_norm = float(grad_norm_t.item())
+                else:
+                    grad_norm = compute_grad_norm(model.parameters())
                 optimizer.step()
 
-                loss_total_sum += float(loss_total.item())
+                loss_total_value = float(loss_total.item())
+                if loss_total_value > worst_batch_loss:
+                    worst_batch_loss = loss_total_value
+                    worst_batch_diagnostic = build_train_batch_diagnostic(
+                        epoch=epoch,
+                        batch_idx=batch_idx,
+                        batch=batch,
+                        losses={
+                            "loss_total": loss_total_value,
+                            "loss_root": float(l_root.item()),
+                            "loss_root_x": float(l_root_axis[0].item()),
+                            "loss_root_y": float(l_root_axis[1].item()),
+                            "loss_root_z": float(l_root_axis[2].item()),
+                            "loss_root_vel": float(l_vel.item()),
+                            "loss_root_acc": float(l_acc.item()),
+                            "loss_cam3d": float(l_cam3d.item()),
+                            "loss_proj": float(l_proj.item()),
+                        },
+                        root_pred_norm=root_pred,
+                        root_gt_norm=root_gt,
+                        stats=stats,
+                        grad_norm=grad_norm,
+                    )
+
+                loss_total_sum += loss_total_value
                 loss_root_sum += float(l_root.item())
+                loss_root_axis_sum += np.array(
+                    [float(l_root_axis[0].item()), float(l_root_axis[1].item()), float(l_root_axis[2].item())],
+                    dtype=np.float64,
+                )
                 loss_vel_sum += float(l_vel.item())
                 loss_acc_sum += float(l_acc.item())
                 loss_cam3d_sum += float(l_cam3d.item())
@@ -217,6 +269,7 @@ def train_tcn(
 
             train_loss_total = loss_total_sum / max(1, n_batches)
             train_loss_root = loss_root_sum / max(1, n_batches)
+            train_loss_root_axis = loss_root_axis_sum / max(1, n_batches)
             train_loss_vel = loss_vel_sum / max(1, n_batches)
             train_loss_acc = loss_acc_sum / max(1, n_batches)
             train_loss_cam3d = loss_cam3d_sum / max(1, n_batches)
@@ -232,6 +285,10 @@ def train_tcn(
                 min_in_image_joints_ratio=min_in_image_joints_ratio,
                 min_bbox_width_px=min_bbox_width_px,
                 min_bbox_height_px=min_bbox_height_px,
+                min_bbox_margin_px=min_bbox_margin_px,
+                root_axis_weights=root_axis_weights,
+                diagnostics_dir=diagnostics_dir,
+                diagnostics_prefix=f"valid_epoch_{epoch:03d}",
             )
             valid_metrics = valid_out.metrics
             valid_root_err = float(valid_metrics.get("root_error_mean_m", float("inf")))
@@ -262,12 +319,18 @@ def train_tcn(
                     epoch,
                     train_loss_total,
                     train_loss_root,
+                    float(train_loss_root_axis[0]),
+                    float(train_loss_root_axis[1]),
+                    float(train_loss_root_axis[2]),
                     train_loss_vel,
                     train_loss_acc,
                     train_loss_cam3d,
                     train_loss_proj,
                     float(valid_metrics.get("valid_loss_total", float("nan"))),
                     float(valid_metrics.get("valid_loss_root", float("nan"))),
+                    float(valid_metrics.get("valid_loss_root_x", float("nan"))),
+                    float(valid_metrics.get("valid_loss_root_y", float("nan"))),
+                    float(valid_metrics.get("valid_loss_root_z", float("nan"))),
                     float(valid_metrics.get("valid_loss_root_vel", float("nan"))),
                     float(valid_metrics.get("valid_loss_root_acc", float("nan"))),
                     float(valid_metrics.get("root_error_mean_m", float("nan"))),
@@ -279,6 +342,12 @@ def train_tcn(
                 ]
             )
             f.flush()
+
+            if worst_batch_diagnostic is not None:
+                append_train_batch_diagnostic(
+                    diagnostics_dir / "train_worst_batches.csv",
+                    worst_batch_diagnostic,
+                )
 
             if early_stopping_patience > 0 and state.epochs_since_improve >= int(early_stopping_patience):
                 break

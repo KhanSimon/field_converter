@@ -98,6 +98,9 @@ def main() -> None:
             min_valid_ratio=0.0,
             pad_mode=cfg.dataset.pad_mode,
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
+            min_bbox_width_px=cfg.dataset.min_bbox_width_px,
+            min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+            min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
             filter_by_min_valid_ratio=False,
         )
         dl = torch.utils.data.DataLoader(
@@ -117,6 +120,8 @@ def main() -> None:
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
             min_bbox_width_px=cfg.dataset.min_bbox_width_px,
             min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+            min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
+            root_axis_weights=cfg.loss_weights.root_axis_weights,
         )
 
         # Add a few coverage fields into the split report.

@@ -2,7 +2,7 @@ import numpy as np
 from field_converter import pathseeker as ps
 
 
-path = ps.DATA_DIR / "skel_3d_sam3dbody_from_bbox_gt" / "ARG_CRO_220001.npy"
+path = ps.DATA_DIR / "Y_rel_cam_gt" / "ARG_CRO_220001.npy"
 data_npy = np.load(path)
 
 print(f"Data shape: {data_npy.shape}")

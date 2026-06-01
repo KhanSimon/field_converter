@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from field_converter.evaluation.diagnostics import PredictionDiagnostics
 from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.geometry.transforms import cam_to_world
 from field_converter.utils.normalization import TorchNormalizationStats
@@ -67,6 +68,9 @@ class Evaluator:
         dataloader: torch.utils.data.DataLoader,
         out_dir: Path,
         split_name: str,
+        diagnostics_dir: Optional[Path] = None,
+        diagnostics_prefix: Optional[str] = None,
+        diagnostics_top_k: int = 100,
     ) -> EvalOutputs:
         """Evaluate a model/baseline on one split and optionally save predictions."""
         _ensure_dir(out_dir)
@@ -84,6 +88,11 @@ class Evaluator:
         # Collect predictions for saving.
         seq_names: List[str] = getattr(dataloader.dataset, "sequences", [])
         seq_to_id = {s: i for i, s in enumerate(seq_names)}
+        diagnostics = (
+            PredictionDiagnostics(seq_names=seq_names, top_k=diagnostics_top_k)
+            if diagnostics_dir is not None
+            else None
+        )
 
         seq_id_chunks: list[np.ndarray] = []
         person_chunks: list[np.ndarray] = []
@@ -120,13 +129,24 @@ class Evaluator:
             root_world_pred = cam_to_world(root_pred_m, R=R, t=t)
             root_world_gt = cam_to_world(root_gt_m, R=R, t=t)
 
-            if self.save_predictions_npz or self.save_predictions_csv:
-                # Metadata
-                if "seq_name" in batch:
-                    seq_ids = np.array([seq_to_id.get(s, -1) for s in batch["seq_name"]], dtype=np.int32)
-                else:
-                    seq_ids = np.full((x.shape[0],), -1, dtype=np.int32)
+            if "seq_name" in batch:
+                seq_ids = np.array([seq_to_id.get(s, -1) for s in batch["seq_name"]], dtype=np.int32)
+            else:
+                seq_ids = np.full((x.shape[0],), -1, dtype=np.int32)
 
+            if diagnostics is not None:
+                diagnostics.update(
+                    seq_id=seq_ids,
+                    person_idx=batch_dev["person_idx"],
+                    frame_idx=batch_dev["frame_idx"],
+                    root_pred_norm=root_pred_norm,
+                    root_gt_norm=root_gt_norm,
+                    root_pred_m=root_pred_m,
+                    root_gt_m=root_gt_m,
+                    root_error_m=root_err_m,
+                )
+
+            if self.save_predictions_npz or self.save_predictions_csv:
                 seq_id_chunks.append(seq_ids)
                 person_chunks.append(_to_numpy(batch_dev["person_idx"]).astype(np.int32))
                 frame_chunks.append(_to_numpy(batch_dev["frame_idx"]).astype(np.int32))
@@ -231,5 +251,11 @@ class Evaluator:
                             float(root_err_m_all[i]),
                         ]
                     )
+
+        if diagnostics is not None and diagnostics_dir is not None:
+            diagnostics.write(
+                out_dir=diagnostics_dir,
+                prefix=diagnostics_prefix or split_name,
+            )
 
         return EvalOutputs(metrics=metrics, predictions_npz_path=predictions_npz_path, predictions_csv_path=predictions_csv_path)

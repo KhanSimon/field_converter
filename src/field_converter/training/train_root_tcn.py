@@ -62,6 +62,7 @@ def main() -> None:
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+        min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
         filter_by_min_valid_ratio=True,
     )
 
@@ -80,6 +81,7 @@ def main() -> None:
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+        min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
         filter_by_min_valid_ratio=False,
     )
 
@@ -156,6 +158,7 @@ def main() -> None:
         grad_clip_norm=cfg.training.grad_clip_norm,
         early_stopping_patience=cfg.training.early_stopping_patience,
         w_root=cfg.loss_weights.root,
+        root_axis_weights=cfg.loss_weights.root_axis_weights,
         w_root_vel=cfg.loss_weights.root_vel,
         w_root_acc=cfg.loss_weights.root_acc,
         w_cam3d=cfg.loss_weights.cam3d,
@@ -163,6 +166,7 @@ def main() -> None:
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+        min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
         checkpoints_dir=cfg.checkpoints_dir,
         train_log_csv=cfg.eval_reports_dir / "train_log.csv",
     )
@@ -198,6 +202,8 @@ def main() -> None:
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
             min_bbox_width_px=cfg.dataset.min_bbox_width_px,
             min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+            min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
+            root_axis_weights=cfg.loss_weights.root_axis_weights,
         )
         print("Validation (aggregated) — best checkpoint")
         print(f"- root_error_mean_m: {out.metrics.get('root_error_mean_m', float('nan')):.6f}")

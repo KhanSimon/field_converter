@@ -63,7 +63,7 @@ def _default_features_dir() -> Path:
 
 
 def _default_out_dir() -> Path:
-    return _repo_root() / "data" / "play_vizu"
+    return _repo_root() / "play_vizu" / "viz_player"
 
 
 def _resolve_features_dir(path: Path) -> Path:

@@ -1,4 +1,4 @@
-run_name: root_tcn_v1_train4
+run_name: root_tcn_v1_train7
 seed: 123
 device: auto
 data_dir: auto
@@ -25,6 +25,8 @@ dataset:
   # Filter out degenerate tiny boxes (pixels). Adjust as needed.
   min_bbox_width_px: null
   min_bbox_height_px: null
+  # Reject bboxes too close to image borders (pixels), e.g. 10 or 20.
+  min_bbox_margin_px: 10
 
 model:
   encoder_hidden_dims: [256, 256]
@@ -49,7 +51,8 @@ training:
 
 loss_weights:
   root: 1.0
-  root_vel: 0.0
+  root_axis_weights: [1.0, 1.0, 1.8] # x, y, z; increase z to emphasize depth.
+  root_vel: 0.2
   root_acc: 0.0
   cam3d: 0.0
   proj: 0.0

@@ -82,6 +82,7 @@ class WindowDatasetConfig:
     # Optional filtering to remove degenerate small boxes (in pixels).
     min_bbox_width_px: Optional[float] = None
     min_bbox_height_px: Optional[float] = None
+    min_bbox_margin_px: Optional[float] = None
 
     def validate(self) -> None:
         if self.max_sequences is not None and self.max_sequences <= 0:
@@ -107,6 +108,8 @@ class WindowDatasetConfig:
             raise ValueError("dataset.min_bbox_width_px must be > 0 or null")
         if self.min_bbox_height_px is not None and float(self.min_bbox_height_px) <= 0:
             raise ValueError("dataset.min_bbox_height_px must be > 0 or null")
+        if self.min_bbox_margin_px is not None and float(self.min_bbox_margin_px) < 0:
+            raise ValueError("dataset.min_bbox_margin_px must be >= 0 or null")
 
 
 @dataclass(frozen=True)
@@ -171,10 +174,19 @@ class TrainingConfig:
 @dataclass(frozen=True)
 class LossWeights:
     root: float = 1.0
+    root_axis_weights: list[float] = field(default_factory=lambda: [1.0, 1.0, 1.0])
     root_vel: float = 0.2
     root_acc: float = 0.0
     cam3d: float = 0.0
     proj: float = 0.0
+
+    def validate(self) -> None:
+        if len(self.root_axis_weights) != 3:
+            raise ValueError("loss_weights.root_axis_weights must contain exactly 3 values [x,y,z]")
+        if any(float(v) < 0.0 for v in self.root_axis_weights):
+            raise ValueError("loss_weights.root_axis_weights values must be >= 0")
+        if sum(float(v) for v in self.root_axis_weights) <= 0.0:
+            raise ValueError("at least one loss_weights.root_axis_weights value must be > 0")
 
 
 @dataclass(frozen=True)
@@ -246,6 +258,7 @@ class TCNRunConfig:
         self.dataset.validate()
         self.model.validate()
         self.training.validate()
+        self.loss_weights.validate()
 
 
 def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
@@ -292,6 +305,9 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
         min_bbox_height_px=(
             None if dataset_raw.get("min_bbox_height_px", None) is None else float(dataset_raw["min_bbox_height_px"])
         ),
+        min_bbox_margin_px=(
+            None if dataset_raw.get("min_bbox_margin_px", None) is None else float(dataset_raw["min_bbox_margin_px"])
+        ),
     )
 
     model_raw = cfg.get("model", {}) or {}
@@ -324,6 +340,7 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
     loss_raw = cfg.get("loss_weights", {}) or {}
     loss_w = LossWeights(
         root=float(loss_raw.get("root", 1.0)),
+        root_axis_weights=[float(v) for v in loss_raw.get("root_axis_weights", [1.0, 1.0, 1.0])],
         root_vel=float(loss_raw.get("root_vel", 0.2)),
         root_acc=float(loss_raw.get("root_acc", 0.0)),
         cam3d=float(loss_raw.get("cam3d", 0.0)),

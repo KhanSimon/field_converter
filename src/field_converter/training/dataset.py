@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import Dataset
 
 from field_converter.training.config import CamFeatTypeStr, InputConfig
+from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
 
 
 SplitStr = Literal["train", "valid", "test"]
@@ -80,6 +81,7 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         min_in_image_joints_ratio: Optional[float] = None,
         min_bbox_width_px: Optional[float] = None,
         min_bbox_height_px: Optional[float] = None,
+        min_bbox_margin_px: Optional[float] = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.split = split
@@ -93,6 +95,7 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         )
         self.min_bbox_width_px = None if min_bbox_width_px is None else float(min_bbox_width_px)
         self.min_bbox_height_px = None if min_bbox_height_px is None else float(min_bbox_height_px)
+        self.min_bbox_margin_px = None if min_bbox_margin_px is None else float(min_bbox_margin_px)
 
         if self.min_in_image_joints_ratio is not None and not (0.0 <= self.min_in_image_joints_ratio <= 1.0):
             raise ValueError("min_in_image_joints_ratio must be in [0,1] or None")
@@ -101,6 +104,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             raise ValueError("min_bbox_width_px must be > 0 or None")
         if self.min_bbox_height_px is not None and self.min_bbox_height_px <= 0:
             raise ValueError("min_bbox_height_px must be > 0 or None")
+        if self.min_bbox_margin_px is not None and self.min_bbox_margin_px < 0:
+            raise ValueError("min_bbox_margin_px must be >= 0 or None")
 
         if self.subsample_stride < 1:
             raise ValueError("subsample_stride must be >= 1")
@@ -175,40 +180,33 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             with np.load(path, allow_pickle=True) as npz:
                 valid_mask = np.asarray(npz["valid_mask"], dtype=bool)
 
-                if self.min_bbox_width_px is not None or self.min_bbox_height_px is not None:
+                if (
+                    self.min_bbox_width_px is not None
+                    or self.min_bbox_height_px is not None
+                    or self.min_bbox_margin_px is not None
+                ):
                     boxes = np.asarray(npz["boxes_xyxy"], dtype=np.float32)  # (N,T,4)
-                    if boxes.ndim != 3 or boxes.shape[-1] != 4:
-                        raise ValueError(f"Expected boxes_xyxy to have shape (N,T,4), got shape={boxes.shape}")
-
-                    w = boxes[..., 2] - boxes[..., 0]
-                    h = boxes[..., 3] - boxes[..., 1]
-                    ok = np.isfinite(w) & np.isfinite(h)
-
-                    if self.min_bbox_width_px is not None:
-                        ok &= w >= float(self.min_bbox_width_px)
-                    if self.min_bbox_height_px is not None:
-                        ok &= h >= float(self.min_bbox_height_px)
-
-                    valid_mask = valid_mask & ok
+                    image_size = np.asarray(npz["image_size"], dtype=np.float32)
+                    valid_mask = filter_valid_mask_bbox_geometry(
+                        valid_mask=valid_mask,
+                        boxes_xyxy=boxes,
+                        image_size=image_size,
+                        min_bbox_width_px=self.min_bbox_width_px,
+                        min_bbox_height_px=self.min_bbox_height_px,
+                        min_bbox_margin_px=self.min_bbox_margin_px,
+                    )
 
                 if self.min_in_image_joints_ratio is not None:
                     valid_joints = np.asarray(npz["valid_joints"], dtype=bool)  # (N,T,J)
                     Y_2d_gt = np.asarray(npz["Y_2d_gt"], dtype=np.float32)  # (N,T,J,2)
-                    image_size = np.asarray(npz["image_size"], dtype=np.float32).reshape(-1)
-                    if image_size.size != 2:
-                        raise ValueError(f"Expected image_size to have 2 values (W,H), got shape={image_size.shape}")
-                    W, H = float(image_size[0]), float(image_size[1])
-
-                    uv_finite = np.isfinite(Y_2d_gt).all(axis=-1)  # (N,T,J)
-                    u = Y_2d_gt[..., 0]
-                    v = Y_2d_gt[..., 1]
-                    in_image = uv_finite & (u >= 0.0) & (u < W) & (v >= 0.0) & (v < H)
-
-                    in_image_valid = valid_joints & in_image
-                    num = in_image_valid.sum(axis=-1)  # (N,T)
-                    den = np.maximum(valid_joints.sum(axis=-1), 1)  # (N,T)
-                    ratio = num / den
-                    valid_mask = valid_mask & (ratio >= self.min_in_image_joints_ratio)
+                    image_size = np.asarray(npz["image_size"], dtype=np.float32)
+                    valid_mask = filter_valid_mask_in_image(
+                        valid_mask=valid_mask,
+                        valid_joints=valid_joints,
+                        Y_2d_gt=Y_2d_gt,
+                        image_size=image_size,
+                        min_in_image_joints_ratio=float(self.min_in_image_joints_ratio),
+                    )
 
             # pf: (K,2) with columns (person_idx, frame_idx)
             pf = np.argwhere(valid_mask)

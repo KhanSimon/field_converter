@@ -36,7 +36,7 @@ def _default_data_dir() -> Path:
 
 
 def _default_out_dir() -> Path:
-    return _repo_root() / "play_vizu"
+    return _repo_root() / "play_vizu" / "viz_action"
 
 
 def _frame_filename(frame_idx: int) -> str:

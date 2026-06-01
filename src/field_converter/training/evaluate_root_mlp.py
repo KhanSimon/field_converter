@@ -92,6 +92,7 @@ def main() -> None:
             min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
             min_bbox_width_px=cfg.dataset.min_bbox_width_px,
             min_bbox_height_px=cfg.dataset.min_bbox_height_px,
+            min_bbox_margin_px=cfg.dataset.min_bbox_margin_px,
         )
         dl = torch.utils.data.DataLoader(
             ds,

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from typing import Optional, Sequence
+
 import torch
 import torch.nn.functional as F
+
+from field_converter.losses.root_losses import weighted_axis_loss
 
 
 def _masked_smooth_l1_mean(
     pred: torch.Tensor,
     gt: torch.Tensor,
     mask: torch.Tensor,
+    axis_weights: Optional[Sequence[float]] = None,
 ) -> torch.Tensor:
     """SmoothL1 averaged over masked time steps.
 
@@ -29,13 +34,37 @@ def _masked_smooth_l1_mean(
         return pred.new_zeros(())
 
     per_coord = F.smooth_l1_loss(pred[valid], gt[valid], reduction="none")
-    return per_coord.mean(dim=-1).mean()
+    axis_loss = per_coord.mean(dim=0)
+    return weighted_axis_loss(axis_loss, axis_weights)
+
+
+def masked_smooth_l1_axis_mean(
+    pred: torch.Tensor,
+    gt: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """Return unweighted SmoothL1 mean per axis for masked time steps."""
+    if pred.shape != gt.shape:
+        raise ValueError(f"pred and gt must have the same shape, got {pred.shape} vs {gt.shape}")
+    if mask.shape != pred.shape[:-1]:
+        raise ValueError(f"mask must match pred without last dim, got mask={mask.shape} pred={pred.shape}")
+    if pred.shape[-1] != 3:
+        raise ValueError(f"Expected last dimension to be 3, got {pred.shape}")
+
+    finite = torch.isfinite(pred).all(dim=-1) & torch.isfinite(gt).all(dim=-1)
+    valid = mask.bool() & finite
+    if not bool(valid.any()):
+        return pred.new_zeros((3,))
+
+    per_coord = F.smooth_l1_loss(pred[valid], gt[valid], reduction="none")
+    return per_coord.mean(dim=0)
 
 
 def loss_root_masked_smooth_l1(
     root_pred_norm: torch.Tensor,
     root_gt_norm: torch.Tensor,
     valid_mask: torch.Tensor,
+    axis_weights: Optional[Sequence[float]] = None,
 ) -> torch.Tensor:
     """Masked SmoothL1(root_pred_norm, root_gt_norm) over time.
 
@@ -45,7 +74,7 @@ def loss_root_masked_smooth_l1(
     - root_gt_norm: (B,T,3)
     - valid_mask: (B,T)
     """
-    return _masked_smooth_l1_mean(root_pred_norm, root_gt_norm, valid_mask)
+    return _masked_smooth_l1_mean(root_pred_norm, root_gt_norm, valid_mask, axis_weights=axis_weights)
 
 
 def loss_root_velocity(

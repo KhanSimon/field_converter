@@ -29,6 +29,7 @@ dataset:
   # Filtering (optional): fraction of valid joints whose 2D GT lies inside the image
   # Helps remove off-frame players that can cause degenerate bbox-normalized inputs.
   min_in_image_joints_ratio: 0.9    # e.g. 0.5, null to disable
+  min_bbox_margin_px: null          # reject boxes closer than N px to image border, e.g. 10 or 20
 
 model:
   hidden_dims: [256, 256, 128]
@@ -49,6 +50,7 @@ training:
 
 loss_weights:
   root: 1.0 # laisser 1, ce qu'on apprend vraiment
+  root_axis_weights: [1.0, 1.0, 1.0] # x, y, z; augmenter z pour pondérer la profondeur
   #smooth L1 entre la root prédite et la root GT
   cam3d: 0 # entre 0.1 et 1 
   # smooth L1 entre la cam3d prédite et la cam3d GT (pour aider à apprendre une meilleure représentation interne)
