@@ -338,9 +338,10 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
     )
 
     loss_raw = cfg.get("loss_weights", {}) or {}
+    root_axis_raw = loss_raw.get("root_axis_weights", loss_raw.get("root_axis", [1.0, 1.0, 1.0]))
     loss_w = LossWeights(
         root=float(loss_raw.get("root", 1.0)),
-        root_axis_weights=[float(v) for v in loss_raw.get("root_axis_weights", [1.0, 1.0, 1.0])],
+        root_axis_weights=[float(v) for v in root_axis_raw],
         root_vel=float(loss_raw.get("root_vel", 0.2)),
         root_acc=float(loss_raw.get("root_acc", 0.0)),
         cam3d=float(loss_raw.get("cam3d", 0.0)),

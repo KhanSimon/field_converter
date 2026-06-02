@@ -5,6 +5,10 @@ data/
 debug_folder/
 slurms/
 scripts/
+!scripts/
+scripts/*
+!scripts/transformer/
+!scripts/transformer/**
 prompts/
 outputs/
 play_vizu/

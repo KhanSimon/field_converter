@@ -4,7 +4,7 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -14,14 +14,10 @@ from field_converter.evaluation.diagnostics import PredictionDiagnostics
 from field_converter.evaluation.evaluator import EvalOutputs
 from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.geometry.transforms import cam_to_world
+from field_converter.models.temporal import TemporalRootModel, forward_temporal_root_model
 from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
-
-
-class TemporalRootModel(Protocol):
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:  # (B,T,D) -> (B,T,3)
-        ...
 
 
 @dataclass(frozen=True)
@@ -155,7 +151,12 @@ class TemporalEvaluator:
 
         for batch in dataloader:
             x = batch["x"].to(self.device, dtype=torch.float32)
-            pred = model(x).to(dtype=torch.float32)  # (B,W,3)
+            valid_mask = batch.get("valid_mask")
+            if isinstance(valid_mask, torch.Tensor):
+                valid_mask = valid_mask.to(self.device)
+            else:
+                valid_mask = None
+            pred = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)  # (B,W,3)
 
             pred_np = _to_numpy(pred)
 

@@ -1,4 +1,4 @@
-run_name: root_tcn_v1_train7
+run_name: root_transformer_v1
 seed: 123
 device: auto
 data_dir: auto
@@ -19,27 +19,29 @@ dataset:
   max_windows_per_sequence: null
   window_size: 81
   stride: 20
-  min_valid_ratio: 0.5 # Minimum ratio of valid frames in a window to be included in training. Adjust as needed.
+  min_valid_ratio: 0.5
   pad_mode: edge #comment gérer les extrémités de la window (extrémité gauche pour le début, 1ères frames et extrémité droite pour la fin, dernières frames).
     #edge : on étire le bord : [0, 1, 2, 3, 4]->[3, 4, 4, 4, 4]
     #zero : on remplit le bord de vecteur null : [0, 1, 2, 3, 4]->[0, 0, 0, 1, 2]
-    #reflect : on reflècte la séquence : [0, 1, 2, 3, 4]->[2, 1, 0, 1, 2] (pas réaliste pour du mouvement human)
+    # : on reflècte la séquence : [0, 1, 2, 3, 4]->[2, 1, 0, 1, 2] (pas réaliste pour du mouvement human)
     #none : pas de padding du tout (on perd des données)
   min_in_image_joints_ratio: 1
-  # Filter out degenerate tiny boxes (pixels). Adjust as needed.
   min_bbox_width_px: null
   min_bbox_height_px: null
-  # Reject bboxes too close to image borders (pixels), e.g. 10 or 20.
   min_bbox_margin_px: 10
 
-model: #entree du tcn : [batch = 64, seq_len = 81, temporal_hidden_dim = 256]
-  encoder_hidden_dims: [256, 256]
-  temporal_hidden_dim: 256
-  temporal_dilations: [1, 2, 4, 8] #chacun des 4 blocs a une dilatation différente, exemple avec dilation=2 : x[t-2], x[t], x[t+2]
-  temporal_kernel_size: 3
+model: #entree du transfo : [batch = 64, seq_len = 81, d_model = 256]
+  encoder_hidden_dims: [256]
+  d_model: 256 
+  num_layers: 2 #nb de bloc transfo empilés. Un bloc = self attention, feedforward, add&norm, etc.
+  num_heads: 4 # nb de tete d'attention en parrallèle, avec 4 têtes, chacune travaille sur 256/4=64 dimensions. 
+  dim_feedforward: 512 #dim du MLP interne (ou Feed Forward Network) de chaque bloc transfo. Ce MLP sert à transformer l'info issu de la self attention vers quelque chose de plus riche (non linéarité).
+  dropout: 0.1
   activation: gelu
-  dropout: 0.1 #supp des neurones aléatoirement pendant l'entraînement pour éviter l'overfitting
-  head_hidden_dims: [128]
+  positional_encoding: learned
+  max_window_size: 81
+  norm_first: true #on normalise les activations avant de faire les calculs d'attention. Plus stable. 
+  head_hidden_dims: [128] #taille du MLP final qui converti le latent en root
 
 optimizer:
   lr: 1.0e-3
@@ -55,7 +57,7 @@ training:
 
 loss_weights:
   root: 1.0
-  root_axis_weights: [1.0, 1.0, 1.8] # x, y, z; increase z to emphasize depth.
+  root_axis_weights: [1.0, 1.0, 1.7]
   root_vel: 0.2
   root_acc: 0.0
   cam3d: 0.0

@@ -25,6 +25,7 @@ from field_converter.losses.temporal_losses import (
     loss_root_velocity,
     masked_smooth_l1_axis_mean,
 )
+from field_converter.models.temporal import forward_temporal_root_model
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
 
@@ -57,7 +58,7 @@ def _save_checkpoint(
     )
 
 
-def train_tcn(
+def train_temporal_root(
     *,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -160,7 +161,7 @@ def train_tcn(
                 valid_mask = batch["valid_mask"].to(device=device)
 
                 optimizer.zero_grad(set_to_none=True)
-                root_pred = model(x).to(dtype=torch.float32)
+                root_pred = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)
 
                 l_root_axis = masked_smooth_l1_axis_mean(root_pred, root_gt, valid_mask)
                 l_root = loss_root_masked_smooth_l1(root_pred, root_gt, valid_mask, axis_weights=root_axis_weights)
@@ -353,3 +354,7 @@ def train_tcn(
                 break
 
     return state
+
+
+def train_tcn(**kwargs: Any) -> TrainerState:
+    return train_temporal_root(**kwargs)
