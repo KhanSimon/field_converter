@@ -1,10 +1,10 @@
 #!/bin/bash -l
-#SBATCH --job-name=train_root_transformer
+#SBATCH --job-name=train_root_tcn
 #SBATCH --partition=GPU_Compute
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=6G
-#SBATCH --gres=gpu:V100S:1
+#SBATCH --gres=gpu:L40S:1
 #SBATCH --time=4:00:00
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=simonkhan160@gmail.com
@@ -26,5 +26,5 @@ mkdir -p slurms
 nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
-PYTHONPATH=src python -m field_converter.training.train_root_transformer --config configs/transformer/root_transformer_v1.yaml
+PYTHONPATH=src python -m field_converter.training.train_root_tcn --config configs/tcn/root_tcn_v1.yaml
 echo "Done"
