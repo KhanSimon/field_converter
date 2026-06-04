@@ -74,10 +74,10 @@ def sample_trial(rng: random.Random) -> dict[str, Any]:
     return {
         "dataset.window_size": window_size,
         "dataset.stride": rng.choice(stride_candidates),
-        "dataset.min_valid_ratio": round_float(rng.uniform(0.35, 0.75), 4),
-        "dataset.pad_mode": rng.choices(["edge", "zero"], weights=[0.85, 0.15], k=1)[0],
-        "dataset.min_in_image_joints_ratio": rng.choice([0.8, 0.9, 1.0]),
-        "dataset.min_bbox_margin_px": rng.choice([0, 5, 10, 15, 20]),
+        #"dataset.min_valid_ratio": round_float(rng.uniform(0.35, 0.75), 4),
+        #"dataset.pad_mode": rng.choices(["edge", "zero"], weights=[0.85, 0.15], k=1)[0],
+        #"dataset.min_in_image_joints_ratio": rng.choice([0.8, 0.9, 1.0]),
+        #"dataset.min_bbox_margin_px": rng.choice([0, 5, 10, 15, 20]),
         "model.encoder_hidden_dims": encoder_hidden_dims,
         "model.temporal_hidden_dim": temporal_hidden_dim,
         "model.temporal_dilations": rng.choice(
