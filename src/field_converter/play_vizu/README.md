@@ -16,9 +16,9 @@ Depuis la racine du repo:
 
 ```bash
 PYTHONPATH=src python -m field_converter.play_vizu.viz_action \
-  --seq_name ARG_CRO_220001 \
+  --seq_name NET_ARG_221729 \
   --frame_idx 123 \
-  --player_idx 3 \
+  --player_idx 0 \
   --show_sam2d \
   --show_gt2d
 ```

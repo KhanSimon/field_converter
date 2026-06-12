@@ -18,7 +18,7 @@ dataset:
   max_sequences: null
   max_windows_per_sequence: null
   window_size: 81
-  stride: 20
+  stride: 20 #nb de frames entre le début de 2 fenêtres consécutives. Avec window_size=81 et stride=20, on a un recouvrement de 61 frames entre les fenêtres, ce qui permet de mieux capturer la continuité du mouvement.
   min_valid_ratio: 0.5
   pad_mode: edge #comment gérer les extrémités de la window (extrémité gauche pour le début, 1ères frames et extrémité droite pour la fin, dernières frames).
     #edge : on étire le bord : [0, 1, 2, 3, 4]->[3, 4, 4, 4, 4]
@@ -74,8 +74,8 @@ eval:
 plots:
   enabled: true
   split_for_plots: valid
-  seq_name: null
-  person_idx: null
-  num_frames_overlay: 6
+  seq_name: NET_ARG_221729  #"NET_ARG_221729","MOR_POR_182352","ARG_FRA_203048","ARG_FRA_192649","ARG_CRO_222132","CRO_MOR_181448",
+  person_idx: 17
+  num_frames_overlay: 4 
   show_sam2d_overlay: false
   num_players_per_subplot: null

@@ -33,8 +33,8 @@ Generated outputs::
 
 Optional SAM3DBody inputs are folded directly into ``data/features/{sequence}.npz``:
 
-    data/skel_2d_sam3dbody_from_bbox_gt/{sequence}.npy|npz
-    data/skel_3d_sam3dbody_from_bbox_gt/{sequence}.npy|npz
+    data/skel_2d_sam3dbody_from_bbox_gt/{sequence}.npy
+    data/skel_3d_sam3dbody_from_bbox_gt/{sequence}.npy
 
 Conventions
 -----------
