@@ -14,6 +14,7 @@ Main normalizations implemented (as requested):
   with train mean/std.
 - ``Y_rel_cam_gt`` standardized with train mean/std, with de-normalization helper.
 - ``Y_root_cam_gt`` standardized with train mean/std, with de-normalization helper.
+- ``ground_intersection`` standardized with train mean/std, with de-normalization helper.
 - camera center ``C`` (meters) standardized with train mean/std; camera forward is
   already unit length and is left untouched.
 - bbox feature ratio: replace ``w/h`` by ``log(w/h)`` (ratios often have more stable
@@ -107,6 +108,9 @@ class NormalizationStats:
 	mean_root: np.ndarray       # (3,)
 	std_root: np.ndarray        # (3,)
 
+	mean_ground_intersection: np.ndarray  # (3,)
+	std_ground_intersection: np.ndarray   # (3,)
+
 	mean_C: np.ndarray          # (3,)
 	std_C: np.ndarray           # (3,)
 
@@ -128,6 +132,8 @@ class NormalizationStats:
 			std_y_rel=self.std_y_rel.astype(np.float32),
 			mean_root=self.mean_root.astype(np.float32),
 			std_root=self.std_root.astype(np.float32),
+			mean_ground_intersection=self.mean_ground_intersection.astype(np.float32),
+			std_ground_intersection=self.std_ground_intersection.astype(np.float32),
 			mean_C=self.mean_C.astype(np.float32),
 			std_C=self.std_C.astype(np.float32),
 			train_sequences=np.array(self.train_sequences, dtype=object),
@@ -149,6 +155,8 @@ class NormalizationStats:
 			"std_y_rel": self.std_y_rel.tolist(),
 			"mean_root": self.mean_root.tolist(),
 			"std_root": self.std_root.tolist(),
+			"mean_ground_intersection": self.mean_ground_intersection.tolist(),
+			"std_ground_intersection": self.std_ground_intersection.tolist(),
 			"mean_C": self.mean_C.tolist(),
 			"std_C": self.std_C.tolist(),
 		}
@@ -158,6 +166,16 @@ class NormalizationStats:
 	def load(npz_path: Path) -> "NormalizationStats":
 		with np.load(npz_path, allow_pickle=True) as npz:
 			pelvis_mode = str(npz["pelvis_mode"].item())
+			mean_ground = (
+				np.asarray(npz["mean_ground_intersection"], dtype=np.float64)
+				if "mean_ground_intersection" in npz.files
+				else np.zeros(3, dtype=np.float64)
+			)
+			std_ground = (
+				np.asarray(npz["std_ground_intersection"], dtype=np.float64)
+				if "std_ground_intersection" in npz.files
+				else np.ones(3, dtype=np.float64)
+			)
 			return NormalizationStats(
 				pelvis_mode=pelvis_mode,  # type: ignore[assignment]
 				mean_sam3d_rel=np.asarray(npz["mean_sam3d_rel"], dtype=np.float64),
@@ -166,6 +184,8 @@ class NormalizationStats:
 				std_y_rel=np.asarray(npz["std_y_rel"], dtype=np.float64),
 				mean_root=np.asarray(npz["mean_root"], dtype=np.float64),
 				std_root=np.asarray(npz["std_root"], dtype=np.float64),
+				mean_ground_intersection=mean_ground,
+				std_ground_intersection=std_ground,
 				mean_C=np.asarray(npz["mean_C"], dtype=np.float64),
 				std_C=np.asarray(npz["std_C"], dtype=np.float64),
 				train_sequences=tuple(npz["train_sequences"].tolist()),
@@ -277,6 +297,10 @@ class Normalizer:
 		sumsq_root = np.zeros((3,), dtype=np.float64)
 		count_root = 0.0
 
+		sum_ground = np.zeros((3,), dtype=np.float64)
+		sumsq_ground = np.zeros((3,), dtype=np.float64)
+		count_ground = 0.0
+
 		sum_C = np.zeros((3,), dtype=np.float64)
 		sumsq_C = np.zeros((3,), dtype=np.float64)
 		count_C = 0.0
@@ -342,6 +366,19 @@ class Normalizer:
 				sumsq_root += (r**2).sum(axis=(0, 1))
 				count_root += float(m_root.sum())
 
+			# --- Ground intersections ---
+			if "ground_intersection" in payload:
+				ground = np.asarray(payload["ground_intersection"], dtype=np.float64)  # (N,T,3)
+				finite_ground = np.isfinite(ground).all(axis=-1)
+				m_ground = finite_ground
+				if valid_mask.shape == m_ground.shape:
+					m_ground = m_ground & valid_mask
+				if np.any(m_ground):
+					g = np.where(m_ground[..., None], ground, 0.0)
+					sum_ground += g.sum(axis=(0, 1))
+					sumsq_ground += (g**2).sum(axis=(0, 1))
+					count_ground += float(m_ground.sum())
+
 			# --- Camera center C (from boosted features) ---
 			cam_boost = np.asarray(payload["cam_feat_boosted_clean"], dtype=np.float64)  # (T,12)
 			C = cam_boost[:, 6:9]
@@ -354,6 +391,12 @@ class Normalizer:
 		mean_sam, std_sam = _safe_std_from_sums(sum_sam, sumsq_sam, count_sam, eps=self.eps)
 		mean_rel, std_rel = _safe_std_from_sums(sum_rel, sumsq_rel, count_rel, eps=self.eps)
 		mean_root, std_root = _safe_std_from_sums(sum_root, sumsq_root, np.array(count_root), eps=self.eps)
+		mean_ground, std_ground = _safe_std_from_sums(
+			sum_ground,
+			sumsq_ground,
+			np.array(count_ground),
+			eps=self.eps,
+		)
 		mean_C, std_C = _safe_std_from_sums(sum_C, sumsq_C, np.array(count_C), eps=self.eps)
 
 		return NormalizationStats(
@@ -364,6 +407,8 @@ class Normalizer:
 			std_y_rel=std_rel,
 			mean_root=np.asarray(mean_root, dtype=np.float64),
 			std_root=np.asarray(std_root, dtype=np.float64),
+			mean_ground_intersection=np.asarray(mean_ground, dtype=np.float64),
+			std_ground_intersection=np.asarray(std_ground, dtype=np.float64),
 			mean_C=np.asarray(mean_C, dtype=np.float64),
 			std_C=np.asarray(std_C, dtype=np.float64),
 			train_sequences=train_sequences,
@@ -395,6 +440,19 @@ class Normalizer:
 	) -> np.ndarray:
 		"""root_cam_pred = root_cam_pred_norm * std_root + mean_root."""
 		return root_cam_pred_norm * std_root[None, None, :] + mean_root[None, None, :]
+
+	@staticmethod
+	def denormalize_ground_intersection(
+		ground_intersection_norm: np.ndarray,
+		*,
+		mean_ground_intersection: np.ndarray,
+		std_ground_intersection: np.ndarray,
+	) -> np.ndarray:
+		"""ground_intersection = ground_intersection_norm * std + mean."""
+		return (
+			ground_intersection_norm * std_ground_intersection[None, None, :]
+			+ mean_ground_intersection[None, None, :]
+		)
 
 	# ------------------------------------------------------------------
 	# Sequence normalization
@@ -441,6 +499,14 @@ class Normalizer:
 		out["Y_root_cam_gt"] = ((root - stats.mean_root[None, None, :]) / stats.std_root[None, None, :]).astype(
 			np.float32
 		)
+
+		# --- Ground intersection standardization ---
+		if "ground_intersection" in out:
+			ground = np.asarray(out["ground_intersection"], dtype=np.float64)
+			out["ground_intersection"] = (
+				(ground - stats.mean_ground_intersection[None, None, :])
+				/ stats.std_ground_intersection[None, None, :]
+			).astype(np.float32)
 
 		# --- SAM 3D: pelvis-center then standardize ---
 		X_sam3d = np.asarray(out["skel_3d_sam3dbody_from_bbox_gt"], dtype=np.float64)
@@ -490,6 +556,7 @@ class Normalizer:
 			"labels": {
 				"Y_rel_cam_gt": "standardized using train mean/std",
 				"Y_root_cam_gt": "standardized using train mean/std",
+				"ground_intersection": "standardized using train mean/std when present",
 			},
 			"camera": {
 				"camera_center": "standardized using train mean/std",
@@ -598,4 +665,3 @@ def main() -> None:
 
 if __name__ == "__main__":
 	main()
-
