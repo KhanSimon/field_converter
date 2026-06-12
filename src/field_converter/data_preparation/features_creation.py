@@ -29,12 +29,20 @@ Generated outputs::
     data/Y_cam_gt/{sequence}.npy
     data/Y_root_cam_gt/{sequence}.npy
     data/Y_2d_gt/{sequence}.npy
+    data/ground_intersection/{sequence}.npy
     data/features/{sequence}.npz
 
 Optional SAM3DBody inputs are folded directly into ``data/features/{sequence}.npz``:
 
     data/skel_2d_sam3dbody_from_bbox_gt/{sequence}.npy
     data/skel_3d_sam3dbody_from_bbox_gt/{sequence}.npy
+
+When both SAM3DBody 2D and 3D skeletons are available, the script also stores
+``ground_intersection`` as ``(N,T,3)`` world points. For each player-frame, it
+selects the SAM3D joint with the lowest body position (largest relative y in
+the inverted-y SAM convention), casts a camera ray through the matching SAM2D
+pixel, and intersects that ray with the pitch plane fitted from
+``data/pitch_points.txt``.
 
 Conventions
 -----------
@@ -155,6 +163,7 @@ class FeatureCreator:
             "Y_cam_gt": self.data_dir / "Y_cam_gt",
             "Y_root_cam_gt": self.data_dir / "Y_root_cam_gt",
             "Y_2d_gt": self.data_dir / "Y_2d_gt",
+            "ground_intersection": self.data_dir / "ground_intersection",
             "features": self.data_dir / FOLDER,
         }
         self.sam3dbody_from_bbox_gt_dirs = {
@@ -250,6 +259,7 @@ class FeatureCreator:
             - ``Y_2d_gt``: ``(N, T, J, 2)`` projected GT 2D joints in pixels
             - ``skel_2d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 2)`` SAM2D pixels
             - ``skel_3d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 3)`` SAM3D camera convention
+            - ``ground_intersection``: optional ``(N, T, 3)`` world point on pitch plane
         """
         rng = self._rng_for_sequence(sequence)
 
@@ -328,7 +338,7 @@ class FeatureCreator:
             "k": self._truncate_k(k).astype(np.float32),
             "image_size": np.array([W, H], dtype=np.int32),
         }
-        self.add_sam3dbody_from_bbox_gt_features(sequence, features, T=T)
+        self.add_sam3dbody_from_bbox_gt_features(sequence, features, T=T, K=K, R=R, t=t, k=k)
         return features
 
     def save_individual_features(
@@ -351,8 +361,11 @@ class FeatureCreator:
             "Y_cam_gt": "Y_cam_gt",
             "Y_root_cam_gt": "Y_root_cam_gt",
             "Y_2d_gt": "Y_2d_gt",
+            "ground_intersection": "ground_intersection",
         }
         for key, dirname in key_to_dir.items():
+            if key not in features:
+                continue
             out_path = self.dirs[dirname] / f"{sequence}.npy"
             if out_path.exists() and not overwrite:
                 continue
@@ -397,6 +410,10 @@ class FeatureCreator:
                     default=None,
                 ),
             },
+            "ground_intersection": (
+                "(N,T,3), world coordinates. Ray is cast through the SAM2D pixel "
+                "of the SAM3D lowest joint and intersected with the pitch_points plane."
+            ),
             "extrinsic_convention": "X_cam_col = R @ X_world_col + t",
         }
 
@@ -438,22 +455,29 @@ class FeatureCreator:
         sequence: str,
         features: Dict[str, np.ndarray],
         T: int,
+        K: np.ndarray,
+        R: np.ndarray,
+        t: np.ndarray,
+        k: np.ndarray,
     ) -> None:
         """Add optional SAM3DBody arrays from bbox GT folders to the consolidated payload."""
         sam2d_key = "skel_2d_sam3dbody_from_bbox_gt"
         sam3d_key = "skel_3d_sam3dbody_from_bbox_gt"
+        sam2d_ntj2 = None
+        sam3d_ntj3 = None
 
         sam2d = self._load_optional_sequence_array(
             self.sam3dbody_from_bbox_gt_dirs[sam2d_key],
             sequence,
         )
         if sam2d is not None:
-            features[sam2d_key] = self._ensure_ntjc(
+            sam2d_ntj2 = self._ensure_ntjc(
                 sam2d,
                 T=T,
                 C=2,
                 name=f"{sequence} {sam2d_key}",
-            ).astype(np.float32)
+            )
+            features[sam2d_key] = sam2d_ntj2.astype(np.float32)
             features["sam2d_layout_fixed"] = np.array(True, dtype=np.bool_)
 
         sam3d = self._load_optional_sequence_array(
@@ -477,6 +501,17 @@ class FeatureCreator:
             features["sam3d_orientation_mpjpe_keep"] = np.array(keep_mpjpe, dtype=np.float32)
             features["sam3d_orientation_mpjpe_flip"] = np.array(flip_mpjpe, dtype=np.float32)
             features["sam3d_convention_fixed"] = np.array(sign == -1, dtype=np.bool_)
+
+        if sam2d_ntj2 is not None and sam3d_ntj3 is not None:
+            ground_intersection = self.compute_ground_intersections_from_sam(
+                sam2d_ntj2,
+                sam3d_ntj3,
+                K,
+                R,
+                t,
+                k,
+            )
+            features["ground_intersection"] = ground_intersection.astype(np.float32)
 
     def ensure_sam3d_camera_orientation(
         self,
@@ -703,6 +738,171 @@ class FeatureCreator:
         X_img[..., 1] = v.astype(np.float32)
         X_img[~valid] = np.nan
         return X_img, valid
+
+    def compute_ground_intersections_from_sam(
+        self,
+        sam2d_ntj2: np.ndarray,
+        sam3d_ntj3: np.ndarray,
+        K: np.ndarray,
+        R: np.ndarray,
+        t: np.ndarray,
+        k: np.ndarray,
+        eps: float = 1e-8,
+    ) -> np.ndarray:
+        """
+        Intersect camera rays for SAM lowest joints with the pitch plane.
+
+        ``sam3d_ntj3`` is used only to choose the lowest relative joint per
+        player-frame: in the SAM convention described by the dataset, larger
+        y values are lower on the body. The ray itself is cast through the
+        corresponding ``sam2d_ntj2`` pixel.
+
+        Returns
+        -------
+        np.ndarray
+            ``(N,T,3)`` world coordinates on the pitch plane, with NaNs for
+            invalid skeletons, pixels, camera rays, or behind-camera hits.
+        """
+        sam2d = np.asarray(sam2d_ntj2, dtype=np.float64)
+        sam3d = np.asarray(sam3d_ntj3, dtype=np.float64)
+        if sam2d.shape[:3] != sam3d.shape[:3] or sam2d.shape[-1] != 2 or sam3d.shape[-1] != 3:
+            raise ValueError(
+                "SAM2D/SAM3D shape mismatch for ground intersections: "
+                f"sam2d={sam2d.shape}, sam3d={sam3d.shape}"
+            )
+
+        N, T, J, _ = sam3d.shape
+        if K.shape[0] != T or R.shape[0] != T or t.shape[0] != T:
+            raise ValueError(
+                f"Camera/SAM time mismatch for ground intersections: sam T={T}, "
+                f"K={K.shape}, R={R.shape}, t={t.shape}"
+            )
+
+        finite_3d = np.isfinite(sam3d).all(axis=-1)
+        finite_2d = np.isfinite(sam2d).all(axis=-1)
+        selectable = finite_3d & finite_2d
+        has_joint = selectable.any(axis=-1)
+
+        y_for_argmax = np.where(selectable, sam3d[..., 1], -np.inf)
+        lowest_joint_idx = np.argmax(y_for_argmax, axis=-1)
+
+        n_idx = np.arange(N)[:, None]
+        t_idx = np.arange(T)[None, :]
+        pixels = sam2d[n_idx, t_idx, lowest_joint_idx]
+        pixels[~has_joint] = np.nan
+
+        plane_normal, plane_offset = self.load_pitch_plane()
+        camera_centers = self.camera_centers_world(R, t)
+        ray_dirs_world = self.pixel_rays_world(pixels, K, R, k)
+
+        denom = np.einsum("ntc,c->nt", ray_dirs_world, plane_normal)
+        numer = -(camera_centers @ plane_normal + plane_offset)
+        numer = np.broadcast_to(numer[None, :], (N, T))
+        ray_scale = np.full((N, T), np.nan, dtype=np.float64)
+        valid = (
+            has_joint
+            & np.isfinite(ray_dirs_world).all(axis=-1)
+            & np.isfinite(denom)
+            & (np.abs(denom) > eps)
+        )
+        ray_scale[valid] = numer[valid] / denom[valid]
+        valid &= ray_scale > eps
+
+        intersections = np.full((N, T, 3), np.nan, dtype=np.float32)
+        points = camera_centers[None, :, :] + ray_scale[..., None] * ray_dirs_world
+        intersections[valid] = points[valid].astype(np.float32)
+        return intersections
+
+    def load_pitch_plane(self) -> Tuple[np.ndarray, float]:
+        """
+        Fit and return the pitch plane from ``data/pitch_points.txt``.
+
+        The returned plane is ``normal dot X + offset = 0`` in world
+        coordinates. Fitting from all points keeps this robust even though the
+        current file is effectively the ``z=0`` plane.
+        """
+        path = self.data_dir / "pitch_points.txt"
+        if not path.exists():
+            raise FileNotFoundError(f"Pitch points file not found: {path}")
+
+        points = np.loadtxt(path, dtype=np.float64)
+        points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        finite = np.isfinite(points).all(axis=-1)
+        points = points[finite]
+        if points.shape[0] < 3:
+            raise ValueError(f"Need at least 3 finite pitch points to fit a plane: {path}")
+
+        centroid = points.mean(axis=0)
+        _, _, vh = np.linalg.svd(points - centroid, full_matrices=False)
+        normal = vh[-1]
+        norm = np.linalg.norm(normal)
+        if norm < 1e-12:
+            raise ValueError(f"Could not fit a valid pitch plane from {path}")
+        normal = normal / norm
+        offset = -float(normal @ centroid)
+        return normal.astype(np.float64), offset
+
+    @staticmethod
+    def camera_centers_world(R: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """Return camera centers ``(T,3)`` in world coordinates."""
+        return -np.einsum("tji,tj->ti", np.asarray(R, dtype=np.float64), np.asarray(t, dtype=np.float64))
+
+    def pixel_rays_world(
+        self,
+        pixels_nt2: np.ndarray,
+        K: np.ndarray,
+        R: np.ndarray,
+        k: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Convert pixels to normalized world ray directions.
+
+        Pixels are first undistorted for the radial ``k1,k2`` model used by
+        ``project_camera_to_image`` and then rotated from camera to world.
+        """
+        pixels = np.asarray(pixels_nt2, dtype=np.float64)
+        K = np.asarray(K, dtype=np.float64)
+        R = np.asarray(R, dtype=np.float64)
+        k = self._truncate_k(np.asarray(k, dtype=np.float64))
+        if k.shape[1] < 2:
+            raise ValueError(f"Expected at least two radial distortion columns, got k shape {k.shape}")
+
+        x_d = (pixels[..., 0] - K[:, 0, 2][None, :]) / K[:, 0, 0][None, :]
+        y_d = (pixels[..., 1] - K[:, 1, 2][None, :]) / K[:, 1, 1][None, :]
+        x, y = self.undistort_normalized_points(x_d, y_d, k[:, :2])
+
+        dirs_cam = np.stack([x, y, np.ones_like(x)], axis=-1)
+        dirs_world = np.einsum("ntc,twc->ntw", dirs_cam, R)
+        norms = np.linalg.norm(dirs_world, axis=-1, keepdims=True)
+        valid = np.isfinite(dirs_world).all(axis=-1, keepdims=True) & (norms > 1e-12)
+        dirs_world = np.divide(
+            dirs_world,
+            norms,
+            out=np.full_like(dirs_world, np.nan),
+            where=valid,
+        )
+        return dirs_world
+
+    @staticmethod
+    def undistort_normalized_points(
+        x_d: np.ndarray,
+        y_d: np.ndarray,
+        k: np.ndarray,
+        iterations: int = 8,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Invert ``x_d=x*(1+k1*r2+k2*r2^2)`` by fixed-point iterations."""
+        x = np.asarray(x_d, dtype=np.float64).copy()
+        y = np.asarray(y_d, dtype=np.float64).copy()
+        k = np.asarray(k, dtype=np.float64)
+        k1 = k[:, 0][None, :]
+        k2 = k[:, 1][None, :]
+        for _ in range(iterations):
+            r2 = x * x + y * y
+            factor = 1.0 + k1 * r2 + k2 * (r2 ** 2)
+            valid = np.isfinite(factor) & (np.abs(factor) > 1e-12)
+            x = np.divide(x_d, factor, out=np.full_like(x, np.nan), where=valid)
+            y = np.divide(y_d, factor, out=np.full_like(y, np.nan), where=valid)
+        return x, y
 
     # ---------------------------------------------------------------------
     # Feature creation
