@@ -19,6 +19,7 @@ input_config:
   bbox_clean_or_noisy: noisy         # clean | noisy
   use_cam_feat: true
   cam_feat_type: boosted_clean       # base_clean | base_noisy | boosted_clean | boosted_noisy
+  use_ground_intersection: false
   use_valid_joints_as_input: true # indique pour chaque joint s'il est valide dans la frame. 
 
 dataset:

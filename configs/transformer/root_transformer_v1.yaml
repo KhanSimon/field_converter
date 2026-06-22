@@ -12,6 +12,7 @@ input_config:
   bbox_clean_or_noisy: clean
   use_cam_feat: true
   cam_feat_type: boosted_clean
+  use_ground_intersection: false
   use_valid_joints_as_input: true
 
 dataset:

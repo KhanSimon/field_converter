@@ -26,7 +26,7 @@ python -c "import torch; print('torch:', torch.__version__); print('cuda build:'
 
 PYTHONPATH=src python scripts/tcn/random_search.py \
   --base-config configs/tcn/root_tcn_v1.yaml \
-  --search-name root_tcn_random_search \
+  --search-name root_tcn_random_search_v2 \
   --n-trials 12 \
   --seed 1234 \
   --output-dir outputs \

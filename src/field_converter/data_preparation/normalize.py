@@ -205,6 +205,7 @@ class Normalizer:
 		sequences_file: str = "sequences_gt.txt",
 		pelvis_mode: PelvisMode = "hips_mean",
 		eps: float = 1e-8,
+		min_bbox_size_px: float = 4.0,
 	) -> None:
 		self.data_dir = Path(data_dir) if data_dir is not None else _DEFAULT_DATA_DIR
 		self.in_dir = self.data_dir / in_features_dirname
@@ -212,6 +213,7 @@ class Normalizer:
 		self.sequences_file = sequences_file
 		self.pelvis_mode = pelvis_mode
 		self.eps = float(eps)
+		self.min_bbox_size_px = float(min_bbox_size_px)
 
 	# ------------------------------------------------------------------
 	# Split
@@ -270,7 +272,10 @@ class Normalizer:
 		if bbox_feat.shape[-1] != 5:
 			return bbox_feat
 		ratio = bbox_feat[..., 4]
-		bbox_feat[..., 4] = np.log(np.maximum(ratio, self.eps))
+		valid_ratio = np.isfinite(ratio) & (ratio > self.eps)
+		log_ratio = np.zeros_like(ratio, dtype=np.float64)
+		np.log(ratio, out=log_ratio, where=valid_ratio)
+		bbox_feat[..., 4] = log_ratio
 		return bbox_feat
 
 	# ------------------------------------------------------------------
@@ -534,12 +539,17 @@ class Normalizer:
 			x1, y1, x2, y2 = [boxes[..., i] for i in range(4)]
 			cx = 0.5 * (x1 + x2)
 			cy = 0.5 * (y1 + y2)
-			bw = np.maximum(x2 - x1, self.eps)
-			bh = np.maximum(y2 - y1, self.eps)
-
-			X_box = X_sam2d_ntjc.copy()
-			X_box[..., 0] = (X_box[..., 0] - cx[..., None]) / bw[..., None]
-			X_box[..., 1] = (X_box[..., 1] - cy[..., None]) / bh[..., None]
+			bw_raw = x2 - x1
+			bh_raw = y2 - y1
+			valid_box = (
+				np.isfinite(boxes).all(axis=-1)
+				& (bw_raw >= self.min_bbox_size_px)
+				& (bh_raw >= self.min_bbox_size_px)
+			)
+			X_box = np.zeros_like(X_sam2d_ntjc, dtype=np.float64)
+			X_box[valid_box] = X_sam2d_ntjc[valid_box]
+			X_box[valid_box, :, 0] = (X_box[valid_box, :, 0] - cx[valid_box, None]) / bw_raw[valid_box, None]
+			X_box[valid_box, :, 1] = (X_box[valid_box, :, 1] - cy[valid_box, None]) / bh_raw[valid_box, None]
 			out["skel_2d_sam3dbody_from_bbox_gt_box"] = X_box.astype(np.float32)
 		else:
 			out.pop("skel_2d_sam3dbody_from_bbox_gt_box", None)
@@ -551,7 +561,11 @@ class Normalizer:
 			"bbox_ratio": "log(w/h)",
 			"skel2d": {
 				"main": "x/W, y/H",
-				"extra": "skel_2d_sam3dbody_from_bbox_gt_box = (x-cx_box)/w_box, (y-cy_box)/h_box",
+				"extra": (
+					"skel_2d_sam3dbody_from_bbox_gt_box = (x-cx_box)/w_box, "
+					"(y-cy_box)/h_box; zeroed when bbox width/height is below "
+					f"{self.min_bbox_size_px:g}px"
+				),
 			},
 			"labels": {
 				"Y_rel_cam_gt": "standardized using train mean/std",
@@ -646,6 +660,12 @@ def _build_argparser() -> argparse.ArgumentParser:
 		default=None,
 		help="Dataset root (default: field_converter/pathseeker.py::DATA_DIR)",
 	)
+	p.add_argument(
+		"--min-bbox-size-px",
+		type=float,
+		default=10.0,
+		help="Minimum bbox width/height for box-normalized 2D features (default: 4.0)",
+	)
 	p.add_argument("--overwrite", action="store_true", help="Overwrite existing normalized .npz files")
 
 	return p
@@ -653,7 +673,11 @@ def _build_argparser() -> argparse.ArgumentParser:
 
 def main() -> None:
 	args = _build_argparser().parse_args()
-	normalizer = Normalizer(data_dir=args.data_dir, pelvis_mode=args.pelvis_mode)
+	normalizer = Normalizer(
+		data_dir=args.data_dir,
+		pelvis_mode=args.pelvis_mode,
+		min_bbox_size_px=args.min_bbox_size_px,
+	)
 	normalizer.run(
 		train_n=args.train_n,
 		valid_n=args.valid_n,

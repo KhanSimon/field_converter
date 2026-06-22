@@ -138,6 +138,7 @@ def load_transformer_run_config(config_path: Path | str) -> TransformerRunConfig
         bbox_clean_or_noisy=str(input_cfg_raw.get("bbox_clean_or_noisy", "noisy")),  # type: ignore[arg-type]
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),
         cam_feat_type=str(input_cfg_raw.get("cam_feat_type", "boosted_clean")),  # type: ignore[arg-type]
+        use_ground_intersection=bool(input_cfg_raw.get("use_ground_intersection", False)),
         use_valid_joints_as_input=bool(input_cfg_raw.get("use_valid_joints_as_input", True)),
     )
 

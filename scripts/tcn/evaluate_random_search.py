@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-field-converter")
-os.environ.setdefault("XDG_CACHE_HOME", "/tmp/field-converter-cache")
+#os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-field-converter")
+#os.environ.setdefault("XDG_CACHE_HOME", "/tmp/field-converter-cache")
 os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 os.makedirs(os.environ["XDG_CACHE_HOME"], exist_ok=True)
 

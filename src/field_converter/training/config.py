@@ -77,6 +77,7 @@ class InputConfig:
     bbox_clean_or_noisy: BboxNoiseStr = "noisy"
     use_cam_feat: bool = True
     cam_feat_type: CamFeatTypeStr = "boosted_clean"
+    use_ground_intersection: bool = False
     use_valid_joints_as_input: bool = True
 
     def validate(self) -> None:
@@ -89,7 +90,14 @@ class InputConfig:
                 "input_config.cam_feat_type must be one of: base_clean, base_noisy, boosted_clean, boosted_noisy "
                 f"(got {self.cam_feat_type!r})"
             )
-        if not (self.use_x3d_sam_rel or self.use_x2d_img or self.use_x2d_box or self.use_bbox_feat or self.use_cam_feat):
+        if not (
+            self.use_x3d_sam_rel
+            or self.use_x2d_img
+            or self.use_x2d_box
+            or self.use_bbox_feat
+            or self.use_cam_feat
+            or self.use_ground_intersection
+        ):
             raise ValueError("At least one input source must be enabled")
 
 
@@ -279,6 +287,7 @@ def load_run_config(config_path: Path | str) -> RunConfig:
         bbox_clean_or_noisy=str(input_cfg_raw.get("bbox_clean_or_noisy", "noisy")),  # type: ignore[arg-type]
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),
         cam_feat_type=str(input_cfg_raw.get("cam_feat_type", "boosted_clean")),  # type: ignore[arg-type]
+        use_ground_intersection=bool(input_cfg_raw.get("use_ground_intersection", False)),
         use_valid_joints_as_input=bool(input_cfg_raw.get("use_valid_joints_as_input", True)),
     )
 

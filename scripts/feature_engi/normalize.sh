@@ -22,4 +22,4 @@ cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
 
 mkdir -p slurms
 
-PYTHONPATH=src python -c "from field_converter.data_preparation.normalize import Normalizer; Normalizer(in_features_dirname='features2', out_features_dirname='features_normalized_hips_mean', pelvis_mode='hips_mean').run(train_n=65, valid_n=12, test_n=12, seed=12345, overwrite=True)"
+PYTHONPATH=src python -c "from field_converter.data_preparation.normalize import Normalizer; Normalizer(in_features_dirname='features2', out_features_dirname='features_normalized_hips_mean', pelvis_mode='hips_mean', min-bbox-size-px=10).run(train_n=65, valid_n=12, test_n=12, seed=12345, overwrite=True)"

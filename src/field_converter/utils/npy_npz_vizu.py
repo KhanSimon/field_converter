@@ -2,12 +2,12 @@ import numpy as np
 from field_converter import pathseeker as ps
 
 
-path = ps.DATA_DIR / "skel_2d_sam3dbody_from_bbox_gt" / "ARG_CRO_220001.npy" 
+path = ps.DATA_DIR / "joints_3d_gt" / "ARG_FRA_201902.npy" 
 data_npy = np.load(path)
 
 print(f"Data shape: {data_npy.shape}")
 
-print(data_npy[0][0])
+print(data_npy)
 """
 
 #path = ps.OUTPUTS / "predictions" / "root_tcn_v1_train" / "test_predictions.npz"

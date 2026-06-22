@@ -273,6 +273,7 @@ Entrées optionnelles supportées par `InputConfig` (si présentes dans le `.npz
 - `skel_2d_sam3dbody_from_bbox_gt_box`: `(P,T,25,2)`
 - `bbox_feat` ou `bbox_feat_clean`: `(P,T,5)`
 - `cam_feat_*`: `(T,6)` pour `base_*` ou `(T,12)` pour `boosted_*`
+- `ground_intersection`: `(P,T,3)` (point d'intersection sol normalisé)
 
 Note: toute valeur NaN/Inf dans les features d’entrée est remplacée par 0 (les masks restent séparés).
 
@@ -296,6 +297,7 @@ Active/désactive les composantes concaténées dans le vecteur `x` (frame-wise)
 - `bbox_clean_or_noisy`: `clean | noisy` (choix de clé `bbox_feat_clean` vs `bbox_feat`)
 - `use_cam_feat` (6 ou 12)
 - `cam_feat_type`: `base_clean | base_noisy | boosted_clean | boosted_noisy`
+- `use_ground_intersection` (3)
 - `use_valid_joints_as_input` (25)
 
 ### `dataset` (helpers debug)

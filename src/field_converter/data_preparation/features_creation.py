@@ -311,7 +311,13 @@ class FeatureCreator:
             noisy_camera["K"], noisy_camera["R"], noisy_camera["t"], noisy_camera["k"], image_size=(W, H)
         )
 
-        valid_box = np.isfinite(boxes_xyxy).all(axis=-1)  # (N,T)
+        box_w = boxes_xyxy[..., 2] - boxes_xyxy[..., 0]
+        box_h = boxes_xyxy[..., 3] - boxes_xyxy[..., 1]
+        valid_box = (
+            np.isfinite(boxes_xyxy).all(axis=-1)
+            & (box_w >= self.noise.bbox_min_size_px)
+            & (box_h >= self.noise.bbox_min_size_px)
+        )  # (N,T)
         valid_joints_3d = np.isfinite(X_world_gt).all(axis=-1)  # (N,T,J)
         valid_depth = X_cam_gt[..., 2] > 1e-6
         valid_joints = valid_joints_3d & valid_depth & valid_joints_proj
@@ -612,7 +618,7 @@ class FeatureCreator:
 
         Row-vector equivalent of ``X_world_col = R.T @ (X_cam_col - t)``.
         """
-        return np.einsum("ntjc,twc->ntjw", X_cam - t[None, :, None, :], R)
+        return np.einsum("ntjc,tcw->ntjw", X_cam - t[None, :, None, :], R)
 
     def compute_pelvis(self, X: np.ndarray, mode: Optional[PelvisMode] = None) -> np.ndarray:
         """
@@ -872,7 +878,7 @@ class FeatureCreator:
         x, y = self.undistort_normalized_points(x_d, y_d, k[:, :2])
 
         dirs_cam = np.stack([x, y, np.ones_like(x)], axis=-1)
-        dirs_world = np.einsum("ntc,twc->ntw", dirs_cam, R)
+        dirs_world = np.einsum("ntc,tcw->ntw", dirs_cam, R)
         norms = np.linalg.norm(dirs_world, axis=-1, keepdims=True)
         valid = np.isfinite(dirs_world).all(axis=-1, keepdims=True) & (norms > 1e-12)
         dirs_world = np.divide(
@@ -909,7 +915,11 @@ class FeatureCreator:
     # ---------------------------------------------------------------------
 
     @staticmethod
-    def make_bbox_features(boxes_xyxy: np.ndarray, image_size: Tuple[int, int]) -> np.ndarray:
+    def make_bbox_features(
+        boxes_xyxy: np.ndarray,
+        image_size: Tuple[int, int],
+        min_size_px: float = 4.0,
+    ) -> np.ndarray:
         """
         Convert xyxy boxes to normalized features.
 
@@ -924,6 +934,10 @@ class FeatureCreator:
         h = y2 - y1
         cx = 0.5 * (x1 + x2)
         cy = 0.5 * (y1 + y2)
+        finite = np.isfinite(boxes).all(axis=-1)
+        valid_size = finite & (w >= float(min_size_px)) & (h >= float(min_size_px))
+        ratio = np.ones_like(w, dtype=np.float64)
+        np.divide(w, h, out=ratio, where=valid_size)
 
         feat = np.stack(
             [
@@ -931,11 +945,12 @@ class FeatureCreator:
                 cy / H,
                 w / W,
                 h / H,
-                w / np.maximum(h, 1e-6),
+                ratio,
             ],
             axis=-1,
         )
-        feat[~np.isfinite(boxes).all(axis=-1)] = np.nan
+        feat[~finite] = np.nan
+        feat[finite & ~valid_size, 4] = 1.0
         return feat.astype(np.float32)
 
     def make_camera_features(

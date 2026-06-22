@@ -178,6 +178,8 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             keys.add(_bbox_feat_key(self.input_config.bbox_clean_or_noisy))
         if self.input_config.use_cam_feat:
             keys.add(_cam_feat_key(self.input_config.cam_feat_type))
+        if self.input_config.use_ground_intersection:
+            keys.add("ground_intersection")
 
         return keys
 
@@ -543,6 +545,21 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                     _nan_to_num_inplace(cam_feat[:T])
             cam_feat = _zero_invalid_frames(cam_feat)
             parts.append(cam_feat.reshape(self.window_size, -1))
+
+        if self.input_config.use_ground_intersection:
+            if T >= self.window_size or self.pad_mode == "edge":
+                ground = np.asarray(payload["ground_intersection"][person_idx, frames_fetch], dtype=np.float32)
+                _nan_to_num_inplace(ground)
+                if not in_bounds.all():
+                    ground = ground.copy()
+                    ground[~in_bounds] = 0.0
+            else:
+                ground = np.zeros((self.window_size, 3), dtype=np.float32)
+                if T > 0:
+                    ground[:T] = np.asarray(payload["ground_intersection"][person_idx, :T], dtype=np.float32)
+                    _nan_to_num_inplace(ground[:T])
+            ground = _zero_invalid_frames(ground)
+            parts.append(ground.reshape(self.window_size, -1))
 
         if self.input_config.use_valid_joints_as_input:
             parts.append(valid_joints.astype(np.float32).reshape(self.window_size, -1))

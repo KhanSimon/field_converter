@@ -28,6 +28,8 @@ def infer_input_dim(cfg: InputConfig) -> int:
         dim += 5
     if cfg.use_cam_feat:
         dim += 6 if cfg.cam_feat_type.startswith("base_") else 12
+    if cfg.use_ground_intersection:
+        dim += 3
     if cfg.use_valid_joints_as_input:
         dim += 25
     return dim
@@ -147,6 +149,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             keys.add(_bbox_feat_key(self.input_config.bbox_clean_or_noisy))
         if self.input_config.use_cam_feat:
             keys.add(_cam_feat_key(self.input_config.cam_feat_type))
+        if self.input_config.use_ground_intersection:
+            keys.add("ground_intersection")
 
         # Common optional fields used for visualization/debug.
         keys.update({"image_size", "boxes_xyxy"})
@@ -322,6 +326,11 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             cam_feat = np.asarray(payload[cam_key][frame_idx], dtype=np.float32)  # (6|12,)
             _nan_to_num_inplace(cam_feat)
             parts.append(cam_feat.reshape(-1))
+
+        if self.input_config.use_ground_intersection:
+            ground = np.asarray(payload["ground_intersection"][person_idx, frame_idx], dtype=np.float32)  # (3,)
+            _nan_to_num_inplace(ground)
+            parts.append(ground.reshape(-1))
 
         if self.input_config.use_valid_joints_as_input:
             parts.append(valid_joints_np.astype(np.float32).reshape(-1))

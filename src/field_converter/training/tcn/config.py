@@ -211,6 +211,20 @@ class PlotsConfig:
 
 
 @dataclass(frozen=True)
+class DiagnosticPlotsConfig:
+    enabled: bool = False
+    split_for_plots: Literal["train", "valid", "test"] = "valid"
+    root_error_vs_camera_distance: bool = True
+    root_error_vs_image_center_distance: bool = True
+    root_error_vs_player_speed: bool = True
+    speed_window: int = 5
+
+    def validate(self) -> None:
+        if self.speed_window <= 0:
+            raise ValueError("diagnostic_plots.speed_window must be > 0")
+
+
+@dataclass(frozen=True)
 class TCNRunConfig:
     run_name: str
     seed: int = 123
@@ -227,6 +241,7 @@ class TCNRunConfig:
     loss_weights: LossWeights = field(default_factory=LossWeights)
     eval: EvalConfig = field(default_factory=EvalConfig)
     plots: PlotsConfig = field(default_factory=PlotsConfig)
+    diagnostic_plots: DiagnosticPlotsConfig = field(default_factory=DiagnosticPlotsConfig)
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -259,6 +274,7 @@ class TCNRunConfig:
         self.model.validate()
         self.training.validate()
         self.loss_weights.validate()
+        self.diagnostic_plots.validate()
 
 
 def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
@@ -283,6 +299,7 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
         bbox_clean_or_noisy=str(input_cfg_raw.get("bbox_clean_or_noisy", "noisy")),  # type: ignore[arg-type]
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),
         cam_feat_type=str(input_cfg_raw.get("cam_feat_type", "boosted_clean")),  # type: ignore[arg-type]
+        use_ground_intersection=bool(input_cfg_raw.get("use_ground_intersection", False)),
         use_valid_joints_as_input=bool(input_cfg_raw.get("use_valid_joints_as_input", True)),
     )
 
@@ -372,6 +389,16 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
         ),
     )
 
+    diagnostic_raw = cfg.get("diagnostic_plots", {}) or {}
+    diagnostic_cfg = DiagnosticPlotsConfig(
+        enabled=bool(diagnostic_raw.get("enabled", False)),
+        split_for_plots=str(diagnostic_raw.get("split_for_plots", plots_cfg.split_for_plots)),  # type: ignore[arg-type]
+        root_error_vs_camera_distance=bool(diagnostic_raw.get("root_error_vs_camera_distance", True)),
+        root_error_vs_image_center_distance=bool(diagnostic_raw.get("root_error_vs_image_center_distance", True)),
+        root_error_vs_player_speed=bool(diagnostic_raw.get("root_error_vs_player_speed", True)),
+        speed_window=int(diagnostic_raw.get("speed_window", 5)),
+    )
+
     run_cfg = TCNRunConfig(
         run_name=run_name,
         seed=seed,
@@ -386,6 +413,7 @@ def load_tcn_run_config(config_path: Path | str) -> TCNRunConfig:
         loss_weights=loss_w,
         eval=eval_cfg,
         plots=plots_cfg,
+        diagnostic_plots=diagnostic_cfg,
     )
 
     run_cfg.validate()

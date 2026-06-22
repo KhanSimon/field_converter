@@ -130,18 +130,290 @@ def plot_world_trajectory_xy(
 
     _ensure_dir(out_path.parent)
 
-    fig, ax = plt.subplots(1, 1, figsize=(7, 7))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 7))
+
+    # -------------------------
+    # Trajectoires
+    # -------------------------
     ax.plot(wg[:, 0], wg[:, 1], label="gt", linewidth=2)
     ax.plot(wp[:, 0], wp[:, 1], label="pred", linewidth=1)
+
+    # -------------------------
+    # Terrain FIFA (105 x 68 m)
+    # Coordonnées centrées en (0,0)
+    # -------------------------
+    FIELD_X = 52.5
+    FIELD_Y = 34.0
+
+    line_kw = dict(color="black", linewidth=1.0, alpha=0.5)
+
+    # Contour
+    ax.plot(
+        [-FIELD_X, FIELD_X, FIELD_X, -FIELD_X, -FIELD_X],
+        [-FIELD_Y, -FIELD_Y, FIELD_Y, FIELD_Y, -FIELD_Y],
+        **line_kw,
+    )
+
+    # Ligne médiane
+    ax.plot([0, 0], [-FIELD_Y, FIELD_Y], **line_kw)
+
+    # Cercle central (rayon 9.15 m)
+    center_circle = plt.Circle(
+        (0, 0),
+        9.15,
+        fill=False,
+        **line_kw,
+    )
+    ax.add_patch(center_circle)
+
+    # Surface de réparation (16.5 m × 40.32 m)
+    penalty_depth = 16.5
+    penalty_half_width = 20.16
+
+    # Gauche
+    ax.plot(
+        [-FIELD_X, -FIELD_X + penalty_depth,
+         -FIELD_X + penalty_depth, -FIELD_X],
+        [-penalty_half_width, -penalty_half_width,
+         penalty_half_width, penalty_half_width],
+        **line_kw,
+    )
+
+    # Droite
+    ax.plot(
+        [FIELD_X, FIELD_X - penalty_depth,
+         FIELD_X - penalty_depth, FIELD_X],
+        [-penalty_half_width, -penalty_half_width,
+         penalty_half_width, penalty_half_width],
+        **line_kw,
+    )
+
+    # Surface de but (5.5 m × 18.32 m)
+    goal_depth = 5.5
+    goal_half_width = 9.16
+
+    # Gauche
+    ax.plot(
+        [-FIELD_X, -FIELD_X + goal_depth,
+         -FIELD_X + goal_depth, -FIELD_X],
+        [-goal_half_width, -goal_half_width,
+         goal_half_width, goal_half_width],
+        **line_kw,
+    )
+
+    # Droite
+    ax.plot(
+        [FIELD_X, FIELD_X - goal_depth,
+         FIELD_X - goal_depth, FIELD_X],
+        [-goal_half_width, -goal_half_width,
+         goal_half_width, goal_half_width],
+        **line_kw,
+    )
+
+    # -------------------------
+    # Limites fixes
+    # -------------------------
+    ax.set_xlim(-52.5, 52.5)
+    ax.set_ylim(-34, 34)
+
     ax.set_title(f"World root trajectory (X-Y) — {seq_name} person={pid}")
     ax.set_xlabel("X_world (m)")
     ax.set_ylabel("Y_world (m)")
-    ax.grid(True, alpha=0.3)
-    ax.axis("equal")
+
+    ax.grid(True, alpha=0.2)
+    ax.set_aspect("equal", adjustable="box")
     ax.legend()
+
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
+
+
+def _finite_xy(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    x = np.asarray(x, dtype=np.float64).reshape(-1)
+    y = np.asarray(y, dtype=np.float64).reshape(-1)
+    mask = np.isfinite(x) & np.isfinite(y)
+    return x[mask], y[mask]
+
+
+def _plot_diagnostic_scatter(
+    *,
+    x: np.ndarray,
+    y: np.ndarray,
+    out_path: Path,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+) -> None:
+    x, y = _finite_xy(x, y)
+    n = int(x.size)
+    r = float("nan")
+
+    _ensure_dir(out_path.parent)
+    fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+
+    if n > 0:
+        ax.scatter(x, y, s=10, alpha=0.35, linewidths=0)
+
+    if n >= 2 and float(np.std(x)) > 0.0 and float(np.std(y)) > 0.0:
+        slope, intercept = np.polyfit(x, y, deg=1)
+        xs = np.array([float(np.min(x)), float(np.max(x))], dtype=np.float64)
+        ax.plot(xs, slope * xs + intercept, color="tab:red", linewidth=2, label="linear fit")
+        r = float(np.corrcoef(x, y)[0, 1])
+        ax.legend()
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.text(
+        0.02,
+        0.98,
+        f"r = {r:.3f}\nN = {n}",
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.85, "edgecolor": "0.8"},
+    )
+
+    if n == 0:
+        ax.text(0.5, 0.5, "No finite points", transform=ax.transAxes, ha="center", va="center")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def _project_root_center_distances(
+    *,
+    data_dir: Path,
+    split: str,
+    pred: Dict[str, Any],
+) -> np.ndarray:
+    seq_names = list(pred.get("seq_names", []))
+    seq_id_arr = np.asarray(pred["seq_id"], dtype=np.int32)
+    frame_arr = np.asarray(pred["frame_idx"], dtype=np.int32)
+    root_gt_m = np.asarray(pred["root_gt_m"], dtype=np.float32)
+    out = np.full((root_gt_m.shape[0],), np.nan, dtype=np.float64)
+
+    for seq_id in sorted(int(s) for s in np.unique(seq_id_arr) if int(s) >= 0):
+        if seq_id >= len(seq_names):
+            continue
+        seq_name = str(seq_names[seq_id])
+        seq_path = Path(data_dir) / split / f"{seq_name}.npz"
+        if not seq_path.exists():
+            continue
+        idx = np.flatnonzero(seq_id_arr == seq_id)
+        if idx.size == 0:
+            continue
+
+        with np.load(seq_path, allow_pickle=True) as npz:
+            image_size = np.asarray(npz["image_size"], dtype=np.float32).reshape(-1)
+            K_all = np.asarray(npz["K"], dtype=np.float32)
+            k_all = np.asarray(npz["k"], dtype=np.float32)
+
+        if image_size.size != 2:
+            continue
+        W, H = float(image_size[0]), float(image_size[1])
+        frames = frame_arr[idx]
+        in_bounds = (frames >= 0) & (frames < K_all.shape[0])
+        if not in_bounds.any() or W <= 0.0 or H <= 0.0:
+            continue
+
+        idx_valid = idx[in_bounds]
+        frames_valid = frames[in_bounds]
+        uv = project_cam_to_image(
+            torch.from_numpy(root_gt_m[idx_valid, None, :]),
+            K=torch.from_numpy(K_all[frames_valid]),
+            k=torch.from_numpy(k_all[frames_valid]),
+        ).squeeze(1).numpy()
+        out[idx_valid] = np.sqrt(((uv[:, 0] / W) - 0.5) ** 2 + ((uv[:, 1] / H) - 0.5) ** 2)
+
+    return out
+
+
+def _root_world_speeds(pred: Dict[str, Any], *, speed_window: int) -> tuple[np.ndarray, np.ndarray]:
+    seq_id_arr = np.asarray(pred["seq_id"], dtype=np.int32)
+    person_arr = np.asarray(pred["person_idx"], dtype=np.int32)
+    frame_arr = np.asarray(pred["frame_idx"], dtype=np.int32)
+    root_world_gt = np.asarray(pred["root_world_gt_m"], dtype=np.float32)
+    root_err = np.asarray(pred["root_error_m"], dtype=np.float32)
+
+    xs: list[np.ndarray] = []
+    ys: list[np.ndarray] = []
+    step = int(max(1, speed_window))
+
+    for seq_id in np.unique(seq_id_arr):
+        for pid in np.unique(person_arr[seq_id_arr == seq_id]):
+            mask = (seq_id_arr == seq_id) & (person_arr == pid)
+            if int(mask.sum()) <= step:
+                continue
+            order = np.argsort(frame_arr[mask])
+            frames = frame_arr[mask][order].astype(np.float64)
+            roots = root_world_gt[mask][order].astype(np.float64)
+            errs = root_err[mask][order].astype(np.float64)
+
+            delta_frames = frames[step:] - frames[:-step]
+            valid = delta_frames > 0.0
+            if not valid.any():
+                continue
+            delta_pos = roots[step:] - roots[:-step]
+            speed = np.linalg.norm(delta_pos, axis=-1) / delta_frames
+            xs.append(speed[valid])
+            ys.append(errs[step:][valid])
+
+    if not xs:
+        return np.zeros((0,), dtype=np.float64), np.zeros((0,), dtype=np.float64)
+    return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
+
+
+def plot_root_diagnostic_plots(
+    *,
+    data_dir: Path,
+    split: str,
+    predictions_npz: Path,
+    out_dir: Path,
+    root_error_vs_camera_distance: bool = True,
+    root_error_vs_image_center_distance: bool = True,
+    root_error_vs_player_speed: bool = True,
+    speed_window: int = 5,
+) -> None:
+    pred = load_predictions_npz(predictions_npz)
+    root_gt_m = np.asarray(pred["root_gt_m"], dtype=np.float32)
+    root_err = np.asarray(pred["root_error_m"], dtype=np.float32)
+
+    if root_error_vs_camera_distance:
+        camera_distance = np.linalg.norm(root_gt_m, axis=-1)
+        _plot_diagnostic_scatter(
+            x=camera_distance,
+            y=root_err,
+            out_path=out_dir / f"root_error_vs_camera_distance_{split}.png",
+            xlabel="GT root camera distance ||root_cam_gt|| (m)",
+            ylabel="root_error_3d (m)",
+            title=f"Root error vs camera distance - {split}",
+        )
+
+    if root_error_vs_image_center_distance:
+        center_distance = _project_root_center_distances(data_dir=data_dir, split=split, pred=pred)
+        _plot_diagnostic_scatter(
+            x=center_distance,
+            y=root_err,
+            out_path=out_dir / f"root_error_vs_image_center_distance_{split}.png",
+            xlabel="normalized GT root distance to image center",
+            ylabel="root_error_3d (m)",
+            title=f"Root error vs image-center distance - {split}",
+        )
+
+    if root_error_vs_player_speed:
+        speed, err = _root_world_speeds(pred, speed_window=speed_window)
+        _plot_diagnostic_scatter(
+            x=speed,
+            y=err,
+            out_path=out_dir / f"root_error_vs_player_speed_{split}.png",
+            xlabel=f"GT root world speed over {int(max(1, speed_window))} frames (m/frame)",
+            ylabel="root_error_3d (m)",
+            title=f"Root error vs player speed - {split}",
+        )
 
 
 def plot_training_curves(

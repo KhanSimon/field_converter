@@ -11,13 +11,17 @@
 #SBATCH --output=slurms/slurm_%j.out
 #SBATCH --error=slurms/slurm_%j.err
 
+set -euo pipefail
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate cv_train
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
-export MPLCONFIGDIR=/tmp/matplotlib-field-converter
-export XDG_CACHE_HOME=/tmp/field-converter-cache
+
+
+export MPLCONFIGDIR="${SLURM_TMPDIR:-$PWD/.cache}/matplotlib"
+export XDG_CACHE_HOME="${SLURM_TMPDIR:-$PWD/.cache}/field-converter"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
 
 cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
 
@@ -27,7 +31,7 @@ nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
 PYTHONPATH=src python scripts/tcn/evaluate_random_search.py \
-  --search-name root_tcn_random_search \
+  --search-name root_tcn_random_search_v2 \
   --output-dir outputs \
   --metric best_root_error_mean_m \
   --top-k 8

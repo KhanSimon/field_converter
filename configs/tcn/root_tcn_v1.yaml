@@ -1,4 +1,4 @@
-run_name: root_tcn_v1_train7
+run_name: root_tcn_v1_train10
 seed: 123
 device: auto
 data_dir: auto
@@ -7,11 +7,12 @@ output_dir: outputs
 input_config:
   use_x3d_sam_rel: true
   use_x2d_img: true
-  use_x2d_box: true
+  use_x2d_box: false #outliers à cause des bboxs
   use_bbox_feat: true
   bbox_clean_or_noisy: clean
   use_cam_feat: true
   cam_feat_type: boosted_clean
+  use_ground_intersection: true
   use_valid_joints_as_input: true
 
 dataset:
@@ -27,8 +28,8 @@ dataset:
     #none : pas de padding du tout (on perd des données)
   min_in_image_joints_ratio: 1
   # Filter out degenerate tiny boxes (pixels). Adjust as needed.
-  min_bbox_width_px: null
-  min_bbox_height_px: null
+  min_bbox_width_px: 10
+  min_bbox_height_px: 10
   # Reject bboxes too close to image borders (pixels), e.g. 10 or 20.
   min_bbox_margin_px: 10
 
@@ -77,3 +78,11 @@ plots:
   num_frames_overlay: 6
   show_sam2d_overlay: false
   num_players_per_subplot: null
+
+diagnostic_plots:
+  enabled: true
+  split_for_plots: valid
+  root_error_vs_camera_distance: true
+  root_error_vs_image_center_distance: true
+  root_error_vs_player_speed: true
+  speed_window: 5

@@ -9,6 +9,7 @@ import torch
 
 from field_converter.evaluation.temporal_evaluator import TemporalEvaluator
 from field_converter.evaluation.visualization import (
+    plot_root_diagnostic_plots,
     plot_reprojection_overlay,
     plot_root_timeseries,
     plot_training_curves,
@@ -177,6 +178,23 @@ def main() -> None:
                 num_frames=cfg.plots.num_frames_overlay,
                 show_sam2d=cfg.plots.show_sam2d_overlay,
                 num_players_per_subplot=cfg.plots.num_players_per_subplot,
+            )
+
+    if cfg.diagnostic_plots.enabled:
+        split_p = cfg.diagnostic_plots.split_for_plots
+        pred_npz = cfg.predictions_dir / f"{split_p}_predictions.npz"
+        if pred_npz.exists():
+            diagnostic_dir = cfg.eval_reports_dir / "plots" / "diagnostics"
+            ensure_dir(diagnostic_dir)
+            plot_root_diagnostic_plots(
+                data_dir=cfg.data_dir,
+                split=split_p,
+                predictions_npz=pred_npz,
+                out_dir=diagnostic_dir,
+                root_error_vs_camera_distance=cfg.diagnostic_plots.root_error_vs_camera_distance,
+                root_error_vs_image_center_distance=cfg.diagnostic_plots.root_error_vs_image_center_distance,
+                root_error_vs_player_speed=cfg.diagnostic_plots.root_error_vs_player_speed,
+                speed_window=cfg.diagnostic_plots.speed_window,
             )
 
     print(f"Saved metrics: {metrics_path}")
