@@ -27,7 +27,7 @@ cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
 
 mkdir -p slurms
 
-nvidia-smi
+nvidia-smi || true
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
 PYTHONPATH=src python scripts/tcn/evaluate_random_search.py \

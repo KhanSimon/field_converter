@@ -2,7 +2,7 @@ import numpy as np
 from field_converter import pathseeker as ps
 
 
-path = ps.DATA_DIR / "joints_3d_gt" / "ARG_FRA_201902.npy" 
+path = "ARG_FRA_182345_root_pred.npy"
 data_npy = np.load(path)
 
 print(f"Data shape: {data_npy.shape}")
@@ -10,8 +10,7 @@ print(f"Data shape: {data_npy.shape}")
 print(data_npy)
 """
 
-#path = ps.OUTPUTS / "predictions" / "root_tcn_v1_train" / "test_predictions.npz"
-
+path = ps.OUTPUTS_DIR / "predictions" / "root_tcn_random_search_v2_trial_001" / "test_predictions.npz"
 
 
 
@@ -30,8 +29,7 @@ else:
         print(f"\nKey: {k} — shape: {getattr(arr, 'shape', 'scalar')}")
         
             
-        #print(arr)
+        print(arr)
         
 """
-
 

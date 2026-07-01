@@ -7,7 +7,7 @@ output_dir: outputs
 input_config:
   use_x3d_sam_rel: true
   use_x2d_img: true
-  use_x2d_box: false #outliers à cause des bboxs
+  use_x2d_box: true #outliers à cause des bboxs
   use_bbox_feat: true
   bbox_clean_or_noisy: clean
   use_cam_feat: true
