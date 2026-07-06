@@ -25,5 +25,5 @@ mkdir -p slurms
 nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
-PYTHONPATH=src python -m field_converter.training.evaluate_root_tcn --config outputs/eval_reports/root_tcn_random_search_v2_trial_001/config_used.yaml --checkpoint best
+PYTHONPATH=src python -m field_converter.training.evaluate_root_tcn --config outputs/eval_reports/root_tcn_grid_search_rs1_trial_002/config_used.yaml --checkpoint best
 echo "Done"

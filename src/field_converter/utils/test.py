@@ -1,12 +1,15 @@
-from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, Iterable, Literal, Optional, Tuple
-import hashlib
-import json
-import warnings
-from field_converter import pathseeker as ps 
-
 import numpy as np
+from field_converter import pathseeker as ps
 
-print("Test OK ")
+#PYTHONPATH=src python -m field_converter.utils.test
+
+path = ps.DATA_DIR / "boxes_gt" / "ARG_FRA_182345.npy"
+all_boxes = np.load(path)
+
+print(f"Data shape: {all_boxes.shape}")
+
+for boxes in all_boxes:
+    for player_boxe in boxes:
+        
+            if player_boxe[2]-player_boxe[0] < 10:
+                print(player_boxe[2]-player_boxe[0])

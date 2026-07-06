@@ -71,4 +71,4 @@ if __name__ == "__main__":
         key=args.key,
     )
 
-#PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/root_tcn_random_search_v2_trial_001/test_predictions.npz ARG_FRA_182345_root_pred.npy
+#PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/root_tcn_grid_search_rs1_trial_002/test_predictions.npz ARG_FRA_182345_root_pred.npy

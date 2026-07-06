@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-#os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-field-converter")
-#os.environ.setdefault("XDG_CACHE_HOME", "/tmp/field-converter-cache")
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-field-converter")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp/field-converter-cache")
 os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 os.makedirs(os.environ["XDG_CACHE_HOME"], exist_ok=True)
 
@@ -24,6 +24,10 @@ import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SEARCH_NAME = "root_tcn_random_search"
+SEARCH_KIND_LABELS = {
+    "random_search": "Random search",
+    "grid_search": "Grid search",
+}
 
 
 def to_float(value: Any) -> float:
@@ -37,7 +41,7 @@ def to_float(value: Any) -> float:
 
 def read_rows(results_csv: Path) -> list[dict[str, Any]]:
     if not results_csv.exists():
-        raise FileNotFoundError(f"Random search results not found: {results_csv}")
+        raise FileNotFoundError(f"Search results not found: {results_csv}")
     with results_csv.open("r", newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
@@ -108,6 +112,7 @@ def plot_score_by_trial(
     out_path: Path,
     *,
     lower_is_better: bool,
+    search_label: str,
 ) -> None:
     rows = sorted(rows, key=lambda row: int(float(row["trial"])))
     trials = [int(float(row["trial"])) for row in rows]
@@ -121,7 +126,7 @@ def plot_score_by_trial(
     ax.scatter([trials[best_idx]], [scores[best_idx]], s=90, color="tab:red", label="best")
     ax.set_xlabel("trial")
     ax.set_ylabel(metric)
-    ax.set_title("Random search validation score")
+    ax.set_title(f"{search_label} validation score")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -129,9 +134,17 @@ def plot_score_by_trial(
     plt.close(fig)
 
 
-def plot_top_trials(rows: list[dict[str, Any]], metric: str, out_path: Path, top_k: int) -> None:
+def plot_top_trials(
+    rows: list[dict[str, Any]],
+    metric: str,
+    out_path: Path,
+    top_k: int,
+    *,
+    search_label: str,
+    search_name: str,
+) -> None:
     top = rows[: min(top_k, len(rows))]
-    labels = [str(row["run_name"]).replace("root_tcn_random_search_", "") for row in top]
+    labels = [str(row["run_name"]).replace(f"{search_name}_", "") for row in top]
     scores = [to_float(row.get(metric)) for row in top]
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +156,7 @@ def plot_top_trials(rows: list[dict[str, Any]], metric: str, out_path: Path, top
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
     ax.set_xlabel(metric)
-    ax.set_title(f"Top {len(top)} TCN random-search trials")
+    ax.set_title(f"Top {len(top)} TCN {search_label.lower()} trials")
     ax.grid(True, axis="x", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
@@ -203,8 +216,9 @@ def run_best_evaluation(config_path: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate and visualize a TCN random search")
+    parser = argparse.ArgumentParser(description="Evaluate and visualize a TCN random/grid search")
     parser.add_argument("--search-name", type=str, default=DEFAULT_SEARCH_NAME)
+    parser.add_argument("--search-kind", choices=sorted(SEARCH_KIND_LABELS), default="random_search")
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "outputs")
     parser.add_argument("--results-csv", type=Path, default=None)
     parser.add_argument("--metric", type=str, default="best_root_error_mean_m")
@@ -217,9 +231,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     output_dir = args.output_dir if args.output_dir.is_absolute() else PROJECT_ROOT / args.output_dir
-    search_dir = output_dir / "random_search" / args.search_name
-    results_csv = args.results_csv or (search_dir / "random_search_results.csv")
+    search_dir = output_dir / args.search_kind / args.search_name
+    results_csv = args.results_csv or (search_dir / f"{args.search_kind}_results.csv")
     plots_dir = search_dir / "plots"
+    search_label = SEARCH_KIND_LABELS[args.search_kind]
 
     rows = read_rows(results_csv)
     rows = finite_metric_rows(rows, args.metric)
@@ -235,7 +250,7 @@ def main() -> None:
         raise FileNotFoundError(f"Best config not found: {config_path}")
 
     search_dir.mkdir(parents=True, exist_ok=True)
-    write_csv(search_dir / "random_search_results_ranked.csv", ranked)
+    write_csv(search_dir / f"{args.search_kind}_results_ranked.csv", ranked)
     shutil.copyfile(config_path, search_dir / "best_config.yaml")
 
     best_payload = {
@@ -259,8 +274,21 @@ def main() -> None:
     )
 
     lower_is_better = not args.higher_is_better
-    plot_score_by_trial(ranked, args.metric, plots_dir / "score_by_trial.png", lower_is_better=lower_is_better)
-    plot_top_trials(ranked, args.metric, plots_dir / "top_trials.png", top_k=args.top_k)
+    plot_score_by_trial(
+        ranked,
+        args.metric,
+        plots_dir / "score_by_trial.png",
+        lower_is_better=lower_is_better,
+        search_label=search_label,
+    )
+    plot_top_trials(
+        ranked,
+        args.metric,
+        plots_dir / "top_trials.png",
+        top_k=args.top_k,
+        search_label=search_label,
+        search_name=args.search_name,
+    )
     plot_hparam_scatters(
         ranked,
         args.metric,
@@ -274,7 +302,7 @@ def main() -> None:
     best_plots_dir = output_dir / "eval_reports" / str(best.get("run_name")) / "plots"
     print(f"Best run: {best.get('run_name')} ({args.metric}={to_float(best.get(args.metric)):.6f})")
     print(f"Best config: {search_dir / 'best_config.yaml'}")
-    print(f"Random-search plots: {plots_dir}")
+    print(f"{search_label} plots: {plots_dir}")
     print(f"Best-run plots: {best_plots_dir}")
 
 

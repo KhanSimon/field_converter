@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=tcn_random_search
+#SBATCH --job-name=tcn_grid_search
 #SBATCH --partition=GPU_Compute
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -24,10 +24,9 @@ mkdir -p slurms
 nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
-PYTHONPATH=src python scripts/tcn/random_search.py \
+PYTHONPATH=src python scripts/tcn/grid_search.py \
   --base-config configs/tcn/best_config_rs_1.yaml \
-  --search-name root_tcn_random_search_temporal \
-  --n-trials 12 \
+  --search-name root_tcn_grid_search_2 \
   --seed 1234 \
   --output-dir outputs \
   --skip-existing

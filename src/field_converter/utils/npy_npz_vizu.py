@@ -1,6 +1,8 @@
 import numpy as np
 from field_converter import pathseeker as ps
 
+# PYTHONPATH=src python -m field_converter.utils.npy_npz_vizu
+
 
 path = "ARG_FRA_182345_root_pred.npy"
 data_npy = np.load(path)
