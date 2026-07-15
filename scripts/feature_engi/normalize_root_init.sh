@@ -22,4 +22,4 @@ cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
 
 mkdir -p slurms
 
-PYTHONPATH=src python -m field_converter.data_preparation.features_creation
+PYTHONPATH=src python -m field_converter.data_preparation.normalize_root_init --features-normalized-dirname features_normalized --overwrite

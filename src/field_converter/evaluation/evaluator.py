@@ -13,6 +13,7 @@ from torch import nn
 from field_converter.evaluation.diagnostics import PredictionDiagnostics
 from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.geometry.transforms import cam_to_world
+from field_converter.training.prediction import PredictionModeStr, apply_prediction_mode
 from field_converter.utils.normalization import TorchNormalizationStats
 
 
@@ -54,11 +55,13 @@ class Evaluator:
         device: torch.device,
         save_predictions_npz: bool = True,
         save_predictions_csv: bool = False,
+        prediction_mode: PredictionModeStr = "absolute",
     ) -> None:
         self.stats = stats
         self.device = device
         self.save_predictions_npz = bool(save_predictions_npz)
         self.save_predictions_csv = bool(save_predictions_csv)
+        self.prediction_mode = prediction_mode
 
     @torch.no_grad()
     def evaluate_split(
@@ -99,6 +102,8 @@ class Evaluator:
         frame_chunks: list[np.ndarray] = []
 
         root_pred_norm_chunks: list[np.ndarray] = []
+        root_delta_pred_norm_chunks: list[np.ndarray] = []
+        root_init_norm_chunks: list[np.ndarray] = []
         root_gt_norm_chunks: list[np.ndarray] = []
 
         root_pred_m_chunks: list[np.ndarray] = []
@@ -114,7 +119,12 @@ class Evaluator:
             x = batch_dev["x"].to(dtype=torch.float32)
             root_gt_norm = batch_dev["root_gt"].to(dtype=torch.float32)
 
-            root_pred_norm = model(x).to(dtype=torch.float32)
+            model_output_norm = model(x).to(dtype=torch.float32)
+            root_pred_norm = apply_prediction_mode(
+                model_output_norm,
+                batch_dev,
+                prediction_mode=self.prediction_mode,
+            )
 
             metrics_acc.update(batch=batch_dev, root_pred_norm=root_pred_norm, stats=stats)
 
@@ -152,6 +162,9 @@ class Evaluator:
                 frame_chunks.append(_to_numpy(batch_dev["frame_idx"]).astype(np.int32))
 
                 root_pred_norm_chunks.append(_to_numpy(root_pred_norm).astype(np.float32))
+                if self.prediction_mode == "delta":
+                    root_delta_pred_norm_chunks.append(_to_numpy(model_output_norm).astype(np.float32))
+                    root_init_norm_chunks.append(_to_numpy(batch_dev["root_init_norm"].to(dtype=torch.float32)).astype(np.float32))
                 root_gt_norm_chunks.append(_to_numpy(root_gt_norm).astype(np.float32))
 
                 root_pred_m_chunks.append(_to_numpy(root_pred_m).astype(np.float32))
@@ -176,6 +189,16 @@ class Evaluator:
             root_pred_norm_all = (
                 np.concatenate(root_pred_norm_chunks, axis=0) if root_pred_norm_chunks else np.zeros((0, 3), dtype=np.float32)
             )
+            root_delta_pred_norm_all = (
+                np.concatenate(root_delta_pred_norm_chunks, axis=0)
+                if root_delta_pred_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
+            root_init_norm_all = (
+                np.concatenate(root_init_norm_chunks, axis=0)
+                if root_init_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
             root_gt_norm_all = (
                 np.concatenate(root_gt_norm_chunks, axis=0) if root_gt_norm_chunks else np.zeros((0, 3), dtype=np.float32)
             )
@@ -191,21 +214,26 @@ class Evaluator:
                 np.concatenate(root_world_gt_chunks, axis=0) if root_world_gt_chunks else np.zeros((0, 3), dtype=np.float32)
             )
 
-            np.savez_compressed(
-                predictions_npz_path,
-                seq_names=np.array(seq_names, dtype=object),
-                seq_id=seq_ids,
-                person_idx=person_idx,
-                frame_idx=frame_idx,
-                root_pred_norm=root_pred_norm_all,
-                root_gt_norm=root_gt_norm_all,
-                root_pred_m=root_pred_m_all,
-                root_gt_m=root_gt_m_all,
-                root_error_m=root_err_m_all,
-                root_world_pred_m=root_world_pred_all,
-                root_world_gt_m=root_world_gt_all,
-                metrics=json.dumps(metrics),
-            )
+            payload = {
+                "seq_names": np.array(seq_names, dtype=object),
+                "seq_id": seq_ids,
+                "person_idx": person_idx,
+                "frame_idx": frame_idx,
+                "root_pred_norm": root_pred_norm_all,
+                "root_gt_norm": root_gt_norm_all,
+                "root_pred_m": root_pred_m_all,
+                "root_gt_m": root_gt_m_all,
+                "root_error_m": root_err_m_all,
+                "root_world_pred_m": root_world_pred_all,
+                "root_world_gt_m": root_world_gt_all,
+                "prediction_mode": np.array(self.prediction_mode, dtype=object),
+                "metrics": json.dumps(metrics),
+            }
+            if self.prediction_mode == "delta":
+                payload["root_delta_pred_norm"] = root_delta_pred_norm_all
+                payload["root_init_norm"] = root_init_norm_all
+
+            np.savez_compressed(predictions_npz_path, **payload)
 
         if self.save_predictions_csv:
             predictions_csv_path = out_dir / f"{split_name}_predictions.csv"
@@ -215,42 +243,61 @@ class Evaluator:
             root_pred_m_all = np.concatenate(root_pred_m_chunks, axis=0) if root_pred_m_chunks else np.zeros((0, 3), dtype=np.float32)
             root_gt_m_all = np.concatenate(root_gt_m_chunks, axis=0) if root_gt_m_chunks else np.zeros((0, 3), dtype=np.float32)
             root_err_m_all = np.concatenate(root_err_m_chunks, axis=0) if root_err_m_chunks else np.zeros((0,), dtype=np.float32)
+            root_delta_pred_norm_all = (
+                np.concatenate(root_delta_pred_norm_chunks, axis=0)
+                if root_delta_pred_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
 
             with predictions_csv_path.open("w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(
-                    [
-                        "seq_id",
-                        "seq_name",
-                        "person_idx",
-                        "frame_idx",
-                        "root_pred_x_m",
-                        "root_pred_y_m",
-                        "root_pred_z_m",
-                        "root_gt_x_m",
-                        "root_gt_y_m",
-                        "root_gt_z_m",
-                        "root_error_m",
-                    ]
-                )
+                header = [
+                    "seq_id",
+                    "seq_name",
+                    "person_idx",
+                    "frame_idx",
+                    "root_pred_x_m",
+                    "root_pred_y_m",
+                    "root_pred_z_m",
+                    "root_gt_x_m",
+                    "root_gt_y_m",
+                    "root_gt_z_m",
+                    "root_error_m",
+                ]
+                if self.prediction_mode == "delta":
+                    header.extend(
+                        [
+                            "root_delta_pred_norm_x",
+                            "root_delta_pred_norm_y",
+                            "root_delta_pred_norm_z",
+                        ]
+                    )
+                writer.writerow(header)
                 for i in range(int(root_err_m_all.shape[0])):
                     sid = int(seq_ids[i])
                     sname = seq_names[sid] if 0 <= sid < len(seq_names) else ""
-                    writer.writerow(
-                        [
-                            sid,
-                            sname,
-                            int(person_idx[i]),
-                            int(frame_idx[i]),
-                            float(root_pred_m_all[i, 0]),
-                            float(root_pred_m_all[i, 1]),
-                            float(root_pred_m_all[i, 2]),
-                            float(root_gt_m_all[i, 0]),
-                            float(root_gt_m_all[i, 1]),
-                            float(root_gt_m_all[i, 2]),
-                            float(root_err_m_all[i]),
-                        ]
-                    )
+                    row = [
+                        sid,
+                        sname,
+                        int(person_idx[i]),
+                        int(frame_idx[i]),
+                        float(root_pred_m_all[i, 0]),
+                        float(root_pred_m_all[i, 1]),
+                        float(root_pred_m_all[i, 2]),
+                        float(root_gt_m_all[i, 0]),
+                        float(root_gt_m_all[i, 1]),
+                        float(root_gt_m_all[i, 2]),
+                        float(root_err_m_all[i]),
+                    ]
+                    if self.prediction_mode == "delta":
+                        row.extend(
+                            [
+                                float(root_delta_pred_norm_all[i, 0]),
+                                float(root_delta_pred_norm_all[i, 1]),
+                                float(root_delta_pred_norm_all[i, 2]),
+                            ]
+                        )
+                    writer.writerow(row)
 
         if diagnostics is not None and diagnostics_dir is not None:
             diagnostics.write(

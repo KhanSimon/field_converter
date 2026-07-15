@@ -9,8 +9,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from field_converter.training.config import CamFeatTypeStr, InputConfig
+from field_converter.training.config import CamFeatTypeStr, InputConfig, PredictionModeStr
 from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
+from field_converter.training.root_init import default_root_init_dir, load_root_init_sequence
 
 
 SplitStr = Literal["train", "valid", "test"]
@@ -76,6 +77,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         data_dir: Path | str,
         split: SplitStr,
         input_config: InputConfig,
+        prediction_mode: PredictionModeStr = "absolute",
+        root_init_dir: Optional[Path | str] = None,
         seed: int = 0,
         max_sequences: Optional[int] = None,
         max_samples_per_sequence: Optional[int] = None,
@@ -88,6 +91,10 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         self.data_dir = Path(data_dir)
         self.split = split
         self.input_config = input_config
+        self.prediction_mode = prediction_mode
+        if self.prediction_mode not in {"absolute", "delta"}:
+            raise ValueError(f"prediction_mode must be 'absolute' or 'delta' (got {self.prediction_mode!r})")
+        self.root_init_dir = Path(root_init_dir) if root_init_dir is not None else default_root_init_dir(self.data_dir)
         self.seed = int(seed)
         self.max_sequences = max_sequences
         self.max_samples_per_sequence = max_samples_per_sequence
@@ -256,6 +263,16 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             for k in sorted(self._payload_keys_required):
                 if k in available:
                     payload[k] = npz[k]
+
+        if self.prediction_mode == "delta":
+            root_init = load_root_init_sequence(self.root_init_dir, self.split, seq_name)
+            root_shape = np.asarray(payload["Y_root_cam_gt"]).shape
+            if root_init.shape != root_shape:
+                raise ValueError(
+                    f"root_init shape mismatch for seq={seq_name}: root_init={root_init.shape}, "
+                    f"Y_root_cam_gt={root_shape}"
+                )
+            payload["root_init_norm"] = root_init
         return payload
 
     def _get_payload(self, seq_idx: int) -> Dict[str, np.ndarray]:
@@ -296,6 +313,11 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
 
         root_gt = np.asarray(payload["Y_root_cam_gt"][person_idx, frame_idx], dtype=np.float32)  # (3,) normalized
         _nan_to_num_inplace(root_gt)
+
+        root_init = None
+        if self.prediction_mode == "delta":
+            root_init = np.asarray(payload["root_init_norm"][person_idx, frame_idx], dtype=np.float32)
+            _nan_to_num_inplace(root_init)
 
         # ------------------------------------------------------------------
         # Build input vector x
@@ -356,6 +378,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             "Y_cam_gt": torch.from_numpy(Y_cam_gt),
             "Y_2d_gt": torch.from_numpy(Y_2d_gt),
         }
+        if root_init is not None:
+            sample["root_init_norm"] = torch.from_numpy(root_init)
 
         # Optional fields often useful for visualization.
         if "image_size" in payload:

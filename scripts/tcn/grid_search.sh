@@ -14,7 +14,7 @@
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate cv_train
+conda activate cv_train_clean
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
@@ -25,10 +25,13 @@ nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
 PYTHONPATH=src python scripts/tcn/grid_search.py \
-  --base-config configs/tcn/best_config_rs_1.yaml \
-  --search-name root_tcn_grid_search_2 \
+  --base-config configs/tcn/best_config_gs_1.yaml \
+  --search-name root_tcn_loss_weight_grid_search \
   --seed 1234 \
   --output-dir outputs \
+  --epochs 20 \
+  --max-sequences 20 \
+  --max-windows-per-sequence 500 \
   --skip-existing
 
 echo "Done"

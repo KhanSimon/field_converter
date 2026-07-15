@@ -52,6 +52,8 @@ def main() -> None:
         data_dir=cfg.data_dir,
         split="train",
         input_config=cfg.input_config,
+        prediction_mode=cfg.prediction_mode,
+        root_init_dir=cfg.root_init_dir,
         seed=cfg.seed,
         max_sequences=cfg.dataset.max_sequences,
         max_windows_per_sequence=cfg.dataset.max_windows_per_sequence,
@@ -71,6 +73,8 @@ def main() -> None:
         data_dir=cfg.data_dir,
         split="valid",
         input_config=cfg.input_config,
+        prediction_mode=cfg.prediction_mode,
+        root_init_dir=cfg.root_init_dir,
         seed=cfg.seed,
         max_sequences=cfg.dataset.max_sequences,
         max_windows_per_sequence=None,
@@ -163,6 +167,7 @@ def main() -> None:
         w_root_acc=cfg.loss_weights.root_acc,
         w_cam3d=cfg.loss_weights.cam3d,
         w_proj=cfg.loss_weights.proj,
+        prediction_mode=cfg.prediction_mode,
         min_in_image_joints_ratio=cfg.dataset.min_in_image_joints_ratio,
         min_bbox_width_px=cfg.dataset.min_bbox_width_px,
         min_bbox_height_px=cfg.dataset.min_bbox_height_px,
@@ -193,6 +198,7 @@ def main() -> None:
             device=device,
             save_predictions_npz=False,
             save_predictions_csv=False,
+            prediction_mode=cfg.prediction_mode,
         )
         (out, extras) = evalr.evaluate_split(
             model=model,

@@ -8,6 +8,9 @@ seed: 123
 
 device: auto  # auto | cpu | cuda
 
+prediction_mode: absolute  # absolute | delta ; delta => root_pred_norm = root_init_norm + delta_pred_norm
+root_init_dir: auto         # auto -> data/root_init_cam_normalized
+
 data_dir: auto
 output_dir: outputs
 

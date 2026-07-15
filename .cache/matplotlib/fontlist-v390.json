@@ -990,7 +990,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/UbuntuMono-B.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/UbuntuMono-B.ttf",
       "name": "Ubuntu Mono",
       "style": "normal",
       "variant": "normal",
@@ -1000,7 +1000,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Regular.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Regular.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1030,7 +1030,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-MI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-MI.ttf",
       "name": "Ubuntu",
       "style": "italic",
       "variant": "normal",
@@ -1040,7 +1040,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-C.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-C.ttf",
       "name": "Ubuntu Condensed",
       "style": "normal",
       "variant": "normal",
@@ -1050,7 +1050,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-BlackIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-BlackIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1060,7 +1060,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-MediumIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-MediumIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1070,7 +1070,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/UbuntuMono-R.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/UbuntuMono-R.ttf",
       "name": "Ubuntu Mono",
       "style": "normal",
       "variant": "normal",
@@ -1080,7 +1080,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-Th.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-Th.ttf",
       "name": "Ubuntu",
       "style": "normal",
       "variant": "normal",
@@ -1090,7 +1090,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-B.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-B.ttf",
       "name": "Ubuntu",
       "style": "normal",
       "variant": "normal",
@@ -1100,7 +1100,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Inconsolata-Bold.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Inconsolata-Bold.ttf",
       "name": "Inconsolata",
       "style": "normal",
       "variant": "normal",
@@ -1110,7 +1110,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-It.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-It.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1120,7 +1120,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-RI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-RI.ttf",
       "name": "Ubuntu",
       "style": "italic",
       "variant": "normal",
@@ -1130,7 +1130,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-BoldIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-BoldIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1150,7 +1150,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Black.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Black.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1160,7 +1160,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-L.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-L.ttf",
       "name": "Ubuntu",
       "style": "normal",
       "variant": "normal",
@@ -1170,7 +1170,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-LI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-LI.ttf",
       "name": "Ubuntu",
       "style": "italic",
       "variant": "normal",
@@ -1180,7 +1180,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-R.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-R.ttf",
       "name": "Ubuntu",
       "style": "normal",
       "variant": "normal",
@@ -1200,7 +1200,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Medium.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Medium.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1210,7 +1210,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Inconsolata-Regular.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Inconsolata-Regular.ttf",
       "name": "Inconsolata",
       "style": "normal",
       "variant": "normal",
@@ -1220,7 +1220,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Light.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Light.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1240,7 +1240,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/DejaVuSans.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/DejaVuSans.ttf",
       "name": "DejaVu Sans",
       "style": "normal",
       "variant": "normal",
@@ -1250,7 +1250,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Bold.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Bold.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1260,7 +1260,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-Semibold.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-Semibold.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1280,7 +1280,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-ExtraLight.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-ExtraLight.ttf",
       "name": "Source Code Pro",
       "style": "normal",
       "variant": "normal",
@@ -1290,7 +1290,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-M.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-M.ttf",
       "name": "Ubuntu",
       "style": "normal",
       "variant": "normal",
@@ -1320,7 +1320,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-ExtraLightIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-ExtraLightIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1330,7 +1330,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/UbuntuMono-BI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/UbuntuMono-BI.ttf",
       "name": "Ubuntu Mono",
       "style": "italic",
       "variant": "normal",
@@ -1340,7 +1340,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/UbuntuMono-RI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/UbuntuMono-RI.ttf",
       "name": "Ubuntu Mono",
       "style": "italic",
       "variant": "normal",
@@ -1350,7 +1350,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-LightIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-LightIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",
@@ -1360,7 +1360,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/Ubuntu-BI.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/Ubuntu-BI.ttf",
       "name": "Ubuntu",
       "style": "italic",
       "variant": "normal",
@@ -1370,7 +1370,7 @@
       "__class__": "FontEntry"
     },
     {
-      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train/fonts/SourceCodePro-SemiboldIt.ttf",
+      "fname": "/home/BeeGFS/Laboratories/IBHGC/skhan/.conda/envs/cv_train_clean/fonts/SourceCodePro-SemiboldIt.ttf",
       "name": "Source Code Pro",
       "style": "italic",
       "variant": "normal",

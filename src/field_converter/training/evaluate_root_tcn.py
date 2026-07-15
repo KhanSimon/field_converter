@@ -82,6 +82,7 @@ def main() -> None:
         device=device,
         save_predictions_npz=cfg.eval.save_predictions_npz,
         save_predictions_csv=cfg.eval.save_predictions_csv,
+        prediction_mode=cfg.prediction_mode,
     )
 
     report: Dict[str, Dict[str, float]] = {}
@@ -91,6 +92,8 @@ def main() -> None:
             data_dir=cfg.data_dir,
             split=split,
             input_config=cfg.input_config,
+            prediction_mode=cfg.prediction_mode,
+            root_init_dir=cfg.root_init_dir,
             seed=cfg.seed,
             max_sequences=cfg.dataset.max_sequences,
             max_windows_per_sequence=None,

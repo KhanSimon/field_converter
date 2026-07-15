@@ -16,7 +16,7 @@
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate cv_train
+conda activate cv_train_clean
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
@@ -26,5 +26,5 @@ mkdir -p slurms
 nvidia-smi
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
-PYTHONPATH=src python -m field_converter.training.train_root_tcn --config configs/tcn/root_tcn_v1.yaml
+PYTHONPATH=src python -m field_converter.training.train_root_tcn --config configs/tcn/best_config_rs_1.yaml
 echo "Done"

@@ -17,20 +17,22 @@ import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BASE_CONFIG = PROJECT_ROOT / "configs" / "tcn" / "best_config_rs_1.yaml"
-DEFAULT_SEARCH_NAME = "root_tcn_grid_search_rs1"
+DEFAULT_BASE_CONFIG = PROJECT_ROOT / "configs" / "tcn" / "best_config_gs_1.yaml"
+DEFAULT_SEARCH_NAME = "root_tcn_loss_weight_grid_search"
 
 
 GRID_DIMENSIONS: list[list[dict[str, Any]]] = [
     [
-        {"loss_weights.cam3d": 0},
-        {"dataset.window_size": },
-        {"dataset.window_size": },
+        {"loss_weights.cam3d": 0.0},
+        {"loss_weights.cam3d": 0.03},
+        {"loss_weights.cam3d": 0.1},
+        {"loss_weights.cam3d": 0.3},
     ],
     [
-        {"loss_weights.proj": 0},
-        {"loss_weights.proj": },
-        {"loss_weights.proj": },
+        {"loss_weights.proj": 0.0},
+        {"loss_weights.proj": 0.00003},
+        {"loss_weights.proj": 0.0001},
+        {"loss_weights.proj": 0.0003},
     ],
 ]
 

@@ -15,7 +15,7 @@
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate cv_train
+conda activate cv_train_clean
 
 
 cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter

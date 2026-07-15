@@ -16,6 +16,8 @@ from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.geometry.transforms import cam_to_world
 from field_converter.models.temporal import TemporalRootModel, forward_temporal_root_model
 from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
+from field_converter.training.prediction import PredictionModeStr, apply_prediction_mode
+from field_converter.training.root_init import load_root_init_sequence
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
 
@@ -94,11 +96,13 @@ class TemporalEvaluator:
         device: torch.device,
         save_predictions_npz: bool = True,
         save_predictions_csv: bool = False,
+        prediction_mode: PredictionModeStr = "absolute",
     ) -> None:
         self.stats = stats
         self.device = device
         self.save_predictions_npz = bool(save_predictions_npz)
         self.save_predictions_csv = bool(save_predictions_csv)
+        self.prediction_mode = prediction_mode
 
     @torch.no_grad()
     def evaluate_split(
@@ -156,7 +160,8 @@ class TemporalEvaluator:
                 valid_mask = valid_mask.to(self.device)
             else:
                 valid_mask = None
-            pred = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)  # (B,W,3)
+            model_output = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)  # (B,W,3)
+            pred = apply_prediction_mode(model_output, batch, prediction_mode=self.prediction_mode)
 
             pred_np = _to_numpy(pred)
 
@@ -229,6 +234,8 @@ class TemporalEvaluator:
         frame_chunks: list[np.ndarray] = []
 
         root_pred_norm_chunks: list[np.ndarray] = []
+        root_delta_pred_norm_chunks: list[np.ndarray] = []
+        root_init_norm_chunks: list[np.ndarray] = []
         root_gt_norm_chunks: list[np.ndarray] = []
 
         root_pred_m_chunks: list[np.ndarray] = []
@@ -241,6 +248,7 @@ class TemporalEvaluator:
         # We load each sequence file once for metrics/pred saving.
         data_dir = Path(getattr(dataset, "data_dir"))
         split = str(getattr(dataset, "split", split_name))
+        root_init_dir = getattr(dataset, "root_init_dir", data_dir.parent / "root_init_cam_normalized")
 
         for sid, seq_name in enumerate(sequences):
             seq_path = data_dir / split / f"{seq_name}.npz"
@@ -253,6 +261,11 @@ class TemporalEvaluator:
 
                 x3d_sam_norm = np.asarray(npz["skel_3d_sam3dbody_from_bbox_gt"], dtype=np.float32)  # (P,T,25,3)
                 root_gt_norm = np.asarray(npz["Y_root_cam_gt"], dtype=np.float32)  # (P,T,3)
+                root_init_norm = (
+                    load_root_init_sequence(root_init_dir, split, seq_name)
+                    if self.prediction_mode == "delta"
+                    else None
+                )
 
                 K_all = np.asarray(npz["K"], dtype=np.float32)
                 R_all = np.asarray(npz["R"], dtype=np.float32)
@@ -314,6 +327,11 @@ class TemporalEvaluator:
                 # MetricsAccumulator expects per-frame samples (B, ...)
                 root_pred_t = torch.from_numpy(pred_norm_full[frames]).to(self.device, dtype=torch.float32)
                 root_gt_t = torch.from_numpy(root_gt_norm[pid, frames]).to(self.device, dtype=torch.float32)
+                root_init_t = (
+                    torch.from_numpy(root_init_norm[pid, frames]).to(self.device, dtype=torch.float32)
+                    if root_init_norm is not None
+                    else None
+                )
 
                 x3d_t = torch.from_numpy(x3d_sam_norm[pid, frames]).to(self.device, dtype=torch.float32)
 
@@ -446,6 +464,10 @@ class TemporalEvaluator:
                     frame_chunks.append(frames_save.astype(np.int32, copy=False))
 
                     root_pred_norm_chunks.append(_to_numpy(root_pred_t).astype(np.float32))
+                    if root_init_t is not None:
+                        root_delta_pred_norm_t = root_pred_t - root_init_t
+                        root_delta_pred_norm_chunks.append(_to_numpy(root_delta_pred_norm_t).astype(np.float32))
+                        root_init_norm_chunks.append(_to_numpy(root_init_t).astype(np.float32))
                     root_gt_norm_chunks.append(_to_numpy(root_gt_t).astype(np.float32))
 
                     root_pred_m_chunks.append(_to_numpy(root_pred_m_t).astype(np.float32))
@@ -500,6 +522,16 @@ class TemporalEvaluator:
                 if root_pred_norm_chunks
                 else np.zeros((0, 3), dtype=np.float32)
             )
+            root_delta_pred_norm_all = (
+                np.concatenate(root_delta_pred_norm_chunks, axis=0)
+                if root_delta_pred_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
+            root_init_norm_all = (
+                np.concatenate(root_init_norm_chunks, axis=0)
+                if root_init_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
             root_gt_norm_all = (
                 np.concatenate(root_gt_norm_chunks, axis=0)
                 if root_gt_norm_chunks
@@ -533,28 +565,33 @@ class TemporalEvaluator:
                 else np.zeros((0, 3), dtype=np.float32)
             )
 
-            np.savez_compressed(
-                predictions_npz_path,
-                seq_names=np.array(sequences, dtype=object),
-                seq_id=seq_id,
-                person_idx=person_idx,
-                frame_idx=frame_idx,
-                root_pred_norm=root_pred_norm_all,
-                root_gt_norm=root_gt_norm_all,
-                root_pred_m=root_pred_m_all,
-                root_gt_m=root_gt_m_all,
-                root_error_m=root_err_m_all,
-                root_world_pred_m=root_world_pred_all,
-                root_world_gt_m=root_world_gt_all,
-                metrics=json.dumps(metrics),
-                temporal_extras=json.dumps(
+            payload = {
+                "seq_names": np.array(sequences, dtype=object),
+                "seq_id": seq_id,
+                "person_idx": person_idx,
+                "frame_idx": frame_idx,
+                "root_pred_norm": root_pred_norm_all,
+                "root_gt_norm": root_gt_norm_all,
+                "root_pred_m": root_pred_m_all,
+                "root_gt_m": root_gt_m_all,
+                "root_error_m": root_err_m_all,
+                "root_world_pred_m": root_world_pred_all,
+                "root_world_gt_m": root_world_gt_all,
+                "prediction_mode": np.array(self.prediction_mode, dtype=object),
+                "metrics": json.dumps(metrics),
+                "temporal_extras": json.dumps(
                     {
                         "num_frames_total": extras.num_frames_total,
                         "num_frames_covered": extras.num_frames_covered,
                         "num_frames_uncovered": extras.num_frames_uncovered,
                     }
                 ),
-            )
+            }
+            if self.prediction_mode == "delta":
+                payload["root_delta_pred_norm"] = root_delta_pred_norm_all
+                payload["root_init_norm"] = root_init_norm_all
+
+            np.savez_compressed(predictions_npz_path, **payload)
 
         if self.save_predictions_csv:
             predictions_csv_path = out_dir / f"{split_name}_predictions.csv"
@@ -578,43 +615,62 @@ class TemporalEvaluator:
                 if root_err_m_chunks
                 else np.zeros((0,), dtype=np.float32)
             )
+            root_delta_pred_norm_all = (
+                np.concatenate(root_delta_pred_norm_chunks, axis=0)
+                if root_delta_pred_norm_chunks
+                else np.zeros((0, 3), dtype=np.float32)
+            )
 
             with predictions_csv_path.open("w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(
-                    [
-                        "seq_id",
-                        "seq_name",
-                        "person_idx",
-                        "frame_idx",
-                        "root_pred_x_m",
-                        "root_pred_y_m",
-                        "root_pred_z_m",
-                        "root_gt_x_m",
-                        "root_gt_y_m",
-                        "root_gt_z_m",
-                        "root_error_m",
-                    ]
-                )
+                header = [
+                    "seq_id",
+                    "seq_name",
+                    "person_idx",
+                    "frame_idx",
+                    "root_pred_x_m",
+                    "root_pred_y_m",
+                    "root_pred_z_m",
+                    "root_gt_x_m",
+                    "root_gt_y_m",
+                    "root_gt_z_m",
+                    "root_error_m",
+                ]
+                if self.prediction_mode == "delta":
+                    header.extend(
+                        [
+                            "root_delta_pred_norm_x",
+                            "root_delta_pred_norm_y",
+                            "root_delta_pred_norm_z",
+                        ]
+                    )
+                writer.writerow(header)
 
                 for i in range(int(root_err_m_all.shape[0])):
                     sid_i = int(seq_id[i])
                     sname = sequences[sid_i] if 0 <= sid_i < len(sequences) else ""
-                    writer.writerow(
-                        [
-                            sid_i,
-                            sname,
-                            int(person_idx[i]),
-                            int(frame_idx[i]),
-                            float(root_pred_m_all[i, 0]),
-                            float(root_pred_m_all[i, 1]),
-                            float(root_pred_m_all[i, 2]),
-                            float(root_gt_m_all[i, 0]),
-                            float(root_gt_m_all[i, 1]),
-                            float(root_gt_m_all[i, 2]),
-                            float(root_err_m_all[i]),
-                        ]
-                    )
+                    row = [
+                        sid_i,
+                        sname,
+                        int(person_idx[i]),
+                        int(frame_idx[i]),
+                        float(root_pred_m_all[i, 0]),
+                        float(root_pred_m_all[i, 1]),
+                        float(root_pred_m_all[i, 2]),
+                        float(root_gt_m_all[i, 0]),
+                        float(root_gt_m_all[i, 1]),
+                        float(root_gt_m_all[i, 2]),
+                        float(root_err_m_all[i]),
+                    ]
+                    if self.prediction_mode == "delta":
+                        row.extend(
+                            [
+                                float(root_delta_pred_norm_all[i, 0]),
+                                float(root_delta_pred_norm_all[i, 1]),
+                                float(root_delta_pred_norm_all[i, 2]),
+                            ]
+                        )
+                    writer.writerow(row)
 
         if diagnostics is not None and diagnostics_dir is not None:
             diagnostics.write(

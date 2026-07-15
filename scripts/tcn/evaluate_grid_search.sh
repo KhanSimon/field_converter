@@ -15,7 +15,7 @@ set -euo pipefail
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate cv_train
+conda activate cv_train_clean
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 export MPLCONFIGDIR="${SLURM_TMPDIR:-$PWD/.cache}/matplotlib"
@@ -31,7 +31,7 @@ python -c "import torch; print('torch:', torch.__version__); print('cuda build:'
 
 PYTHONPATH=src python scripts/tcn/evaluate_random_search.py \
   --search-kind grid_search \
-  --search-name root_tcn_grid_search_rs1 \
+  --search-name root_tcn_loss_weight_grid_search \
   --output-dir outputs \
   --metric best_root_error_mean_m \
   --top-k 8

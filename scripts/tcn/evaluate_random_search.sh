@@ -15,7 +15,7 @@ set -euo pipefail
 module purge
 module load EasyBuild Anaconda3
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate cv_train
+conda activate cv_train_clean
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
 

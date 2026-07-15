@@ -6,7 +6,7 @@ from typing import Literal
 
 from field_converter import pathseeker as ps
 from field_converter.models.transformer import PositionalEncodingStr
-from field_converter.training.config import ActivationStr, DeviceStr, InputConfig
+from field_converter.training.config import ActivationStr, DeviceStr, InputConfig, PredictionModeStr, _parse_prediction_mode
 from field_converter.training.tcn.config import (
     EvalConfig,
     LossWeights,
@@ -68,8 +68,10 @@ class TransformerRunConfig:
     run_name: str
     seed: int = 123
     device: DeviceStr = "auto"
+    prediction_mode: PredictionModeStr = "absolute"
 
     data_dir: Path = field(default_factory=lambda: ps.DATA_DIR / "features_normalized")
+    root_init_dir: Path = field(default_factory=lambda: ps.DATA_DIR / "root_init_cam_normalized")
     output_dir: Path = field(default_factory=lambda: ps.PROJECT_ROOT / "outputs")
 
     input_config: InputConfig = field(default_factory=InputConfig)
@@ -106,6 +108,8 @@ class TransformerRunConfig:
             raise ValueError("run_name must be a non-empty string")
         if self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError(f"Unsupported device: {self.device}")
+        if self.prediction_mode not in {"absolute", "delta"}:
+            raise ValueError(f"Unsupported prediction_mode: {self.prediction_mode}")
 
         self.input_config.validate()
         self.dataset.validate()
@@ -123,10 +127,16 @@ def load_transformer_run_config(config_path: Path | str) -> TransformerRunConfig
     run_name = str(cfg.get("run_name", "root_transformer_v1"))
     seed = int(cfg.get("seed", 123))
     device = str(cfg.get("device", "auto")).lower()
+    prediction_mode = _parse_prediction_mode(cfg.get("prediction_mode", "absolute"))
 
     data_dir = _resolve_auto_dir(cfg.get("data_dir"), default=ps.DATA_DIR / "features_normalized")
     output_dir = _resolve_auto_dir(cfg.get("output_dir"), default=ps.PROJECT_ROOT / "outputs")
     data_dir = _ensure_relative_to_project_root(data_dir)
+    root_init_dir = _resolve_auto_dir(
+        cfg.get("root_init_dir"),
+        default=data_dir.parent / "root_init_cam_normalized",
+    )
+    root_init_dir = _ensure_relative_to_project_root(root_init_dir)
     output_dir = _ensure_relative_to_project_root(output_dir)
 
     input_cfg_raw = cfg.get("input_config", {}) or {}
@@ -236,7 +246,9 @@ def load_transformer_run_config(config_path: Path | str) -> TransformerRunConfig
         run_name=run_name,
         seed=seed,
         device=device,  # type: ignore[arg-type]
+        prediction_mode=prediction_mode,
         data_dir=data_dir,
+        root_init_dir=root_init_dir,
         output_dir=output_dir,
         input_config=input_cfg,
         dataset=dataset_cfg,

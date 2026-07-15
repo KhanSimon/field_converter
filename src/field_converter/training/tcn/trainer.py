@@ -26,6 +26,7 @@ from field_converter.losses.temporal_losses import (
     masked_smooth_l1_axis_mean,
 )
 from field_converter.models.temporal import forward_temporal_root_model
+from field_converter.training.prediction import PredictionModeStr, apply_prediction_mode
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
 
@@ -75,6 +76,7 @@ def train_temporal_root(
     w_root_acc: float,
     w_cam3d: float,
     w_proj: float,
+    prediction_mode: PredictionModeStr,
     min_in_image_joints_ratio: Optional[float],
     min_bbox_width_px: Optional[float],
     min_bbox_height_px: Optional[float],
@@ -95,6 +97,7 @@ def train_temporal_root(
         device=device,
         save_predictions_npz=False,
         save_predictions_csv=False,
+        prediction_mode=prediction_mode,
     )
 
     state = TrainerState()
@@ -161,7 +164,8 @@ def train_temporal_root(
                 valid_mask = batch["valid_mask"].to(device=device)
 
                 optimizer.zero_grad(set_to_none=True)
-                root_pred = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)
+                model_output = forward_temporal_root_model(model, x, valid_mask=valid_mask).to(dtype=torch.float32)
+                root_pred = apply_prediction_mode(model_output, batch, prediction_mode=prediction_mode)
 
                 l_root_axis = masked_smooth_l1_axis_mean(root_pred, root_gt, valid_mask)
                 l_root = loss_root_masked_smooth_l1(root_pred, root_gt, valid_mask, axis_weights=root_axis_weights)

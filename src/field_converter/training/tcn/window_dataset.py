@@ -9,8 +9,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from field_converter.training.config import CamFeatTypeStr, InputConfig
+from field_converter.training.config import CamFeatTypeStr, InputConfig, PredictionModeStr
 from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
+from field_converter.training.root_init import default_root_init_dir, load_root_init_sequence
 from field_converter.training.tcn.config import PadModeStr
 
 
@@ -60,6 +61,8 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         data_dir: Path | str,
         split: SplitStr,
         input_config: InputConfig,
+        prediction_mode: PredictionModeStr = "absolute",
+        root_init_dir: Optional[Path | str] = None,
         window_size: int,
         stride: int,
         min_valid_ratio: float,
@@ -76,6 +79,10 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         self.data_dir = Path(data_dir)
         self.split = split
         self.input_config = input_config
+        self.prediction_mode = prediction_mode
+        if self.prediction_mode not in {"absolute", "delta"}:
+            raise ValueError(f"prediction_mode must be 'absolute' or 'delta' (got {self.prediction_mode!r})")
+        self.root_init_dir = Path(root_init_dir) if root_init_dir is not None else default_root_init_dir(self.data_dir)
 
         self.window_size = int(window_size)
         self.stride = int(stride)
@@ -295,6 +302,16 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             for k in sorted(self._payload_keys_required):
                 payload[k] = npz[k]
 
+        if self.prediction_mode == "delta":
+            root_init = load_root_init_sequence(self.root_init_dir, self.split, seq_name)
+            root_shape = np.asarray(payload["Y_root_cam_gt"]).shape
+            if root_init.shape != root_shape:
+                raise ValueError(
+                    f"root_init shape mismatch for seq={seq_name}: root_init={root_init.shape}, "
+                    f"Y_root_cam_gt={root_shape}"
+                )
+            payload["root_init_norm"] = root_init
+
         # Precompute the effective valid_mask used for losses/metrics.
         valid_mask = np.asarray(payload["valid_mask"], dtype=bool)
 
@@ -388,6 +405,9 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
             root_gt = np.asarray(payload["Y_root_cam_gt"][person_idx, frames_fetch], dtype=np.float32)  # (W,3)
             _nan_to_num_inplace(root_gt)
+            if self.prediction_mode == "delta":
+                root_init = np.asarray(payload["root_init_norm"][person_idx, frames_fetch], dtype=np.float32)
+                _nan_to_num_inplace(root_init)
 
             valid_mask = np.asarray(valid_mask_used[person_idx, frames_fetch], dtype=bool)  # (W,)
             valid_joints = np.asarray(payload["valid_joints"][person_idx, frames_fetch], dtype=bool)  # (W,25)
@@ -409,6 +429,9 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
                 root_gt = root_gt.copy()
                 root_gt[~in_bounds] = 0.0
+                if self.prediction_mode == "delta":
+                    root_init = root_init.copy()
+                    root_init[~in_bounds] = 0.0
 
                 Y_cam_gt = Y_cam_gt.copy()
                 Y_cam_gt[~in_bounds] = 0.0
@@ -422,6 +445,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
             x3d_sam = _alloc_zeros((W, 25, 3), np.float32)
             root_gt = _alloc_zeros((W, 3), np.float32)
+            root_init = _alloc_zeros((W, 3), np.float32)
             valid_mask = _alloc_zeros((W,), bool)
             valid_joints = _alloc_zeros((W, 25), bool)
 
@@ -441,6 +465,9 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
                 root_gt[:T] = np.asarray(payload["Y_root_cam_gt"][person_idx, :T], dtype=np.float32)
                 _nan_to_num_inplace(root_gt[:T])
+                if self.prediction_mode == "delta":
+                    root_init[:T] = np.asarray(payload["root_init_norm"][person_idx, :T], dtype=np.float32)
+                    _nan_to_num_inplace(root_init[:T])
 
                 valid_mask[:T] = np.asarray(valid_mask_used[person_idx, :T], dtype=bool)
                 valid_joints[:T] = np.asarray(payload["valid_joints"][person_idx, :T], dtype=bool)
@@ -470,6 +497,8 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         if invalid_frame_mask.any():
             x3d_sam = _zero_invalid_frames(x3d_sam)
             root_gt = _zero_invalid_frames(root_gt)
+            if self.prediction_mode == "delta":
+                root_init = _zero_invalid_frames(root_init)
             Y_cam_gt = _zero_invalid_frames(Y_cam_gt)
             Y_2d_gt = _zero_invalid_frames(Y_2d_gt)
             valid_joints = valid_joints.copy()
@@ -587,5 +616,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             "frame_start": frame_start,
             "frame_indices": torch.from_numpy(frame_indices.astype(np.int64)),
         }
+        if self.prediction_mode == "delta":
+            sample["root_init_norm"] = torch.from_numpy(root_init)
 
         return sample

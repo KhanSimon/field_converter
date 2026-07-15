@@ -73,6 +73,8 @@ def _make_window_loader(
         data_dir=cfg.data_dir,
         split=split,  # type: ignore[arg-type]
         input_config=cfg.input_config,
+        prediction_mode=cfg.prediction_mode,
+        root_init_dir=cfg.root_init_dir,
         seed=cfg.seed,
         max_sequences=cfg.dataset.max_sequences,
         max_windows_per_sequence=None,
@@ -222,6 +224,7 @@ def main() -> None:
         device=device,
         save_predictions_npz=cfg.eval.save_predictions_npz,
         save_predictions_csv=cfg.eval.save_predictions_csv,
+        prediction_mode=cfg.prediction_mode,
     )
 
     report: Dict[str, Dict[str, float]] = {}
@@ -290,7 +293,13 @@ def main() -> None:
         mlp_model.load_state_dict(torch.load(mlp_ckpt, map_location="cpu")["model_state_dict"], strict=True)
         mlp_wrapped = WindowedFramewiseRootModel(mlp_model)
         mlp_report: Dict[str, Dict[str, float]] = {}
-        mlp_eval = TemporalEvaluator(stats=stats, device=device, save_predictions_npz=False, save_predictions_csv=False)
+        mlp_eval = TemporalEvaluator(
+            stats=stats,
+            device=device,
+            save_predictions_npz=False,
+            save_predictions_csv=False,
+            prediction_mode=mlp_cfg.prediction_mode,
+        )
         for split, dl in split_loaders.items():
             out, _extras = mlp_eval.evaluate_split(
                 model=mlp_wrapped,
@@ -323,7 +332,13 @@ def main() -> None:
             raise FileNotFoundError(f"TCN checkpoint not found: {tcn_ckpt}")
         tcn_model.load_state_dict(torch.load(tcn_ckpt, map_location="cpu")["model_state_dict"], strict=True)
         tcn_report: Dict[str, Dict[str, float]] = {}
-        tcn_eval = TemporalEvaluator(stats=stats, device=device, save_predictions_npz=False, save_predictions_csv=False)
+        tcn_eval = TemporalEvaluator(
+            stats=stats,
+            device=device,
+            save_predictions_npz=False,
+            save_predictions_csv=False,
+            prediction_mode=tcn_cfg.prediction_mode,
+        )
         for split, dl in split_loaders.items():
             out, _extras = tcn_eval.evaluate_split(
                 model=tcn_model,

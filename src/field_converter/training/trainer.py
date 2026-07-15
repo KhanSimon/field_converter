@@ -20,6 +20,7 @@ from field_converter.evaluation.diagnostics import (
 from field_converter.evaluation.metrics import MetricsAccumulator
 from field_converter.losses.projection_losses import loss_reprojection
 from field_converter.losses.root_losses import loss_cam3d, loss_root_smooth_l1_axis, weighted_axis_loss
+from field_converter.training.prediction import PredictionModeStr, apply_prediction_mode
 from field_converter.utils.io import ensure_dir
 from field_converter.utils.normalization import TorchNormalizationStats
 
@@ -115,6 +116,7 @@ def _validate(
     root_axis_weights: Sequence[float],
     w_cam3d: float,
     w_proj: float,
+    prediction_mode: PredictionModeStr,
     diagnostics_dir: Optional[Path] = None,
     diagnostics_prefix: Optional[str] = None,
     diagnostics_top_k: int = 100,
@@ -145,7 +147,8 @@ def _validate(
         }
 
         x = batch["x"].to(dtype=torch.float32)
-        root_pred = model(x)
+        model_output = model(x).to(dtype=torch.float32)
+        root_pred = apply_prediction_mode(model_output, batch, prediction_mode=prediction_mode)
 
         losses = _compute_losses(
             batch=batch,
@@ -235,6 +238,7 @@ def train(
     root_axis_weights: Sequence[float],
     w_cam3d: float,
     w_proj: float,
+    prediction_mode: PredictionModeStr,
     checkpoints_dir: Path,
     train_log_csv: Path,
 ) -> TrainerState:
@@ -304,7 +308,8 @@ def train(
                 root_gt = batch["root_gt"].to(dtype=torch.float32)
 
                 optimizer.zero_grad(set_to_none=True)
-                root_pred = model(x)
+                model_output = model(x).to(dtype=torch.float32)
+                root_pred = apply_prediction_mode(model_output, batch, prediction_mode=prediction_mode)
 
                 l_root_axis = loss_root_smooth_l1_axis(root_pred, root_gt)
                 l_root = weighted_axis_loss(l_root_axis, root_axis_weights)
@@ -400,6 +405,7 @@ def train(
                 root_axis_weights=root_axis_weights,
                 w_cam3d=w_cam3d,
                 w_proj=w_proj,
+                prediction_mode=prediction_mode,
                 diagnostics_dir=diagnostics_dir,
                 diagnostics_prefix=f"valid_epoch_{epoch:03d}",
             )

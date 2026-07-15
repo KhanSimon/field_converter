@@ -251,6 +251,23 @@ data/features_normalized/
   test/<sequence>.npz
 ```
 
+Pour le mode delta, `root_init_dir: auto` pointe vers:
+
+```text
+data/root_init_cam_normalized/
+  split.json
+  train/<sequence>.npy
+  valid/<sequence>.npy
+  test/<sequence>.npy
+```
+
+Ces fichiers se génèrent en deux étapes:
+
+```bash
+PYTHONPATH=src python -m field_converter.data_preparation.generate_root_init --features-dirname features --overwrite
+PYTHONPATH=src python -m field_converter.data_preparation.normalize_root_init --features-normalized-dirname features_normalized --overwrite
+```
+
 ### Fichiers `.npz` par séquence
 Le dataset V1 lit (au minimum) les clés suivantes, avec des shapes typiques:
 
@@ -285,7 +302,11 @@ Les fichiers dans config contrôlent tout le pipeline.
 - `run_name`: nom du run (utilisé dans `outputs/.../<run_name>/...`)
 - `seed`: seed pour numpy/torch
 - `device`: `auto | cpu | cuda`
+- `prediction_mode`: `absolute | delta`
+  - `absolute`: le modèle sort directement `root_pred_norm`
+  - `delta`: le modèle sort `delta_pred_norm`, puis `root_pred_norm = root_init_norm + delta_pred_norm`
 - `data_dir`: `auto` ou chemin vers `data/features_normalized`
+- `root_init_dir`: `auto` ou chemin vers `data/root_init_cam_normalized` (requis en mode `delta`)
 - `output_dir`: par défaut `outputs/` à la racine du repo
 
 ### `input_config`
@@ -328,6 +349,7 @@ Dans `outputs/`:
 - `eval_reports/<run_name>/metrics.json`
 - `predictions/<run_name>/<split>_predictions.npz`
   - contient: meta (seq/person/frame), root préd/gt en normalisé & mètres, root monde, erreur root, metrics JSON sérialisées
+  - en mode `delta`, contient aussi `root_delta_pred_norm` et `root_init_norm`
 - `eval_reports/<run_name>/plots/*.png` (si `plots.enabled: true`)
 
 ### Baseline

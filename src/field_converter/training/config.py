@@ -14,6 +14,7 @@ DeviceStr = Literal["auto", "cpu", "cuda"]
 ActivationStr = Literal["relu", "gelu"]
 BboxNoiseStr = Literal["clean", "noisy"]
 CamFeatTypeStr = Literal["base_clean", "base_noisy", "boosted_clean", "boosted_noisy"]
+PredictionModeStr = Literal["absolute", "delta"]
 
 
 def _as_path(value: Any) -> Optional[Path]:
@@ -66,6 +67,13 @@ def _optional_positive_int(value: Any, *, field_name: str) -> Optional[int]:
     if out <= 0:
         raise ValueError(f"{field_name} must be > 0 or null")
     return out
+
+
+def _parse_prediction_mode(value: Any) -> PredictionModeStr:
+    mode = str(value).lower()
+    if mode not in {"absolute", "delta"}:
+        raise ValueError(f"prediction_mode must be 'absolute' or 'delta' (got {value!r})")
+    return mode  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -218,8 +226,10 @@ class RunConfig:
     run_name: str
     seed: int = 123
     device: DeviceStr = "auto"
+    prediction_mode: PredictionModeStr = "absolute"
 
     data_dir: Path = field(default_factory=lambda: ps.DATA_DIR / "features_normalized")
+    root_init_dir: Path = field(default_factory=lambda: ps.DATA_DIR / "root_init_cam_normalized")
     output_dir: Path = field(default_factory=lambda: ps.PROJECT_ROOT / "outputs")
 
     input_config: InputConfig = field(default_factory=InputConfig)
@@ -256,6 +266,8 @@ class RunConfig:
     def validate(self) -> None:
         if not self.run_name:
             raise ValueError("run_name must be a non-empty string")
+        if self.prediction_mode not in {"absolute", "delta"}:
+            raise ValueError(f"Unsupported prediction_mode: {self.prediction_mode}")
         self.input_config.validate()
         self.dataset.validate()
         self.model.validate()
@@ -276,7 +288,13 @@ def load_run_config(config_path: Path | str) -> RunConfig:
     data_dir = _resolve_auto_dir(cfg.get("data_dir"), default=ps.DATA_DIR / "features_normalized")
     output_dir = _resolve_auto_dir(cfg.get("output_dir"), default=ps.PROJECT_ROOT / "outputs")
     data_dir = _ensure_relative_to_project_root(data_dir)
+    root_init_dir = _resolve_auto_dir(
+        cfg.get("root_init_dir"),
+        default=data_dir.parent / "root_init_cam_normalized",
+    )
+    root_init_dir = _ensure_relative_to_project_root(root_init_dir)
     output_dir = _ensure_relative_to_project_root(output_dir)
+    prediction_mode = _parse_prediction_mode(cfg.get("prediction_mode", "absolute"))
 
     input_cfg_raw = cfg.get("input_config", {}) or {}
     input_cfg = InputConfig(
@@ -369,7 +387,9 @@ def load_run_config(config_path: Path | str) -> RunConfig:
         run_name=run_name,
         seed=seed,
         device=device,  # type: ignore[arg-type]
+        prediction_mode=prediction_mode,
         data_dir=data_dir,
+        root_init_dir=root_init_dir,
         output_dir=output_dir,
         input_config=input_cfg,
         dataset=dataset_cfg,
