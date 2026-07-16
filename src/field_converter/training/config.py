@@ -81,6 +81,7 @@ class InputConfig:
     use_x3d_sam_rel: bool = True
     use_x2d_img: bool = False
     use_x2d_box: bool = False
+    use_pitch_points_2d: bool = False
     use_bbox_feat: bool = True
     bbox_clean_or_noisy: BboxNoiseStr = "noisy"
     use_cam_feat: bool = True
@@ -102,9 +103,11 @@ class InputConfig:
             self.use_x3d_sam_rel
             or self.use_x2d_img
             or self.use_x2d_box
+            or self.use_pitch_points_2d
             or self.use_bbox_feat
             or self.use_cam_feat
             or self.use_ground_intersection
+            or self.use_valid_joints_as_input
         ):
             raise ValueError("At least one input source must be enabled")
 
@@ -301,6 +304,7 @@ def load_run_config(config_path: Path | str) -> RunConfig:
         use_x3d_sam_rel=bool(input_cfg_raw.get("use_x3d_sam_rel", True)),
         use_x2d_img=bool(input_cfg_raw.get("use_x2d_img", False)),
         use_x2d_box=bool(input_cfg_raw.get("use_x2d_box", False)),
+        use_pitch_points_2d=bool(input_cfg_raw.get("use_pitch_points_2d", False)),
         use_bbox_feat=bool(input_cfg_raw.get("use_bbox_feat", True)),
         bbox_clean_or_noisy=str(input_cfg_raw.get("bbox_clean_or_noisy", "noisy")),  # type: ignore[arg-type]
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),

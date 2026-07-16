@@ -61,8 +61,8 @@ def round_float(value: float, digits: int = 8) -> float:
 
 
 def sample_trial(rng: random.Random) -> dict[str, Any]:
-    window_size = rng.choices([41, 61, 81, 101], weights=[0.15, 0.2, 0.35, 0.3], k=1)[0]
-    stride_candidates = [s for s in [8, 10, 15, 20] if s <= window_size]
+    window_size = rng.choices([41, 81, 101, 201], weights=[0.15, 0.2, 0.35, 0.3], k=1)[0]
+    stride_candidates = [s for s in [8, 20, 40, 60] if s <= window_size]
     temporal_hidden_dim = rng.choices([128, 192, 256], weights=[0.35, 0.35, 0.3], k=1)[0]
     head_hidden_dim = rng.choices([64, 128, 192], weights=[0.25, 0.55, 0.2], k=1)[0]
 
@@ -72,15 +72,9 @@ def sample_trial(rng: random.Random) -> dict[str, Any]:
         encoder_hidden_dims = [max(128, temporal_hidden_dim // 2), temporal_hidden_dim]
 
     return {
-        "input_config.use_x2d_box": rng.choices([True, False], weights=[0.7, 0.3], k=1)[0],
-        "input_config.use_bbox_feat": True,
-        "input_config.bbox_clean_or_noisy": "clean",
-        "input_config.use_ground_intersection": True,
+
         "dataset.window_size": window_size,
         "dataset.stride": rng.choice(stride_candidates),
-        "dataset.min_bbox_width_px": rng.choice([8, 10, 12, 15]),
-        "dataset.min_bbox_height_px": rng.choice([8, 10, 12, 15]),
-        "dataset.min_bbox_margin_px": rng.choice([5, 10, 15]),
         "model.encoder_hidden_dims": encoder_hidden_dims,
         "model.temporal_hidden_dim": temporal_hidden_dim,
         "model.temporal_dilations": rng.choice(
@@ -91,16 +85,12 @@ def sample_trial(rng: random.Random) -> dict[str, Any]:
             ]
         ),
         "model.temporal_kernel_size": rng.choices([3, 5], weights=[0.85, 0.15], k=1)[0],
-        "model.activation": "gelu",
-        "model.dropout": round_float(rng.uniform(0.08, 0.25), 5),
         "model.head_hidden_dims": [head_hidden_dim],
-        "optimizer.lr": round_float(log_uniform(rng, 1e-4, 8e-4), 8),
+        "optimizer.lr": round_float(log_uniform(rng, 1e-5, 1e-3), 8),
         "optimizer.weight_decay": round_float(
             maybe_zero_log_uniform(rng, zero_probability=0.05, low=5e-5, high=3e-3),
             8,
         ),
-        "training.batch_size": 64,
-        "training.grad_clip_norm": rng.choice([0.25, 0.5, 1.0]),
         "loss_weights.root": 1.0,
         "loss_weights.root_axis_weights": [
             round_float(rng.uniform(0.9, 1.1), 4),
@@ -112,7 +102,7 @@ def sample_trial(rng: random.Random) -> dict[str, Any]:
             maybe_zero_log_uniform(rng, zero_probability=0.35, low=0.003, high=0.05),
             8,
         ),
-        "loss_weights.cam3d": 0.0,
+        "loss_weights.cam3d": round_float(rng.uniform(0, 1), 4),
         "loss_weights.proj": 0.0,
     }
 

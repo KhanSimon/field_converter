@@ -1,4 +1,4 @@
-run_name: root_tcn_random_search_v2_trial_001_delta_mode
+run_name: root_tcn_random_search_v2_trial_001_delta_mode_pitch_points
 seed: 1235
 device: auto
 prediction_mode: delta  # absolute | delta ; delta => root_pred_norm = root_init_norm + delta_pred_norm
@@ -9,6 +9,7 @@ input_config:
   use_x3d_sam_rel: true
   use_x2d_img: true
   use_x2d_box: true
+  use_pitch_points_2d: true # 50 points terrain projetes + masque de visibilite
   use_bbox_feat: true
   bbox_clean_or_noisy: clean
   use_cam_feat: true

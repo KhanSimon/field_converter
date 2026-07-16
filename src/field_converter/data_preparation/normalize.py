@@ -10,6 +10,8 @@ Main normalizations implemented (as requested):
 - 2D SAM skeleton (pixels) ->
 	- image-normalized: ``x/W``, ``y/H``
 	- box-normalized: ``(x-cx_box)/w_box``, ``(y-cy_box)/h_box``
+- 50 projected pitch landmarks -> image-normalized ``x/W``, ``y/H``;
+  out-of-image points are zeroed and represented by ``valid_pitch_points``.
 - 3D SAM skeleton -> pelvis centered ("hips_mean" or "joint8"), then standardized
   with train mean/std.
 - ``Y_rel_cam_gt`` standardized with train mean/std, with de-normalization helper.
@@ -554,6 +556,36 @@ class Normalizer:
 		else:
 			out.pop("skel_2d_sam3dbody_from_bbox_gt_box", None)
 
+		# --- Projected pitch landmarks: image norm + visibility mask ---
+		if "pitch_points_2d" in out:
+			pitch_2d = np.asarray(out["pitch_points_2d"], dtype=np.float64)
+			if pitch_2d.ndim != 3 or pitch_2d.shape[0] != T or pitch_2d.shape[-1] != 2:
+				raise ValueError(f"{sequence}: invalid pitch_points_2d shape {pitch_2d.shape}")
+
+			valid_pitch = np.asarray(
+				out.get("valid_pitch_points", np.isfinite(pitch_2d).all(axis=-1)),
+				dtype=bool,
+			)
+			if valid_pitch.shape != pitch_2d.shape[:2]:
+				raise ValueError(
+					f"{sequence}: valid_pitch_points shape {valid_pitch.shape} does not match "
+					f"pitch_points_2d {pitch_2d.shape}"
+				)
+
+			valid_pitch = (
+				valid_pitch
+				& np.isfinite(pitch_2d).all(axis=-1)
+				& (pitch_2d[..., 0] >= 0.0)
+				& (pitch_2d[..., 0] < W)
+				& (pitch_2d[..., 1] >= 0.0)
+				& (pitch_2d[..., 1] < H)
+			)
+			pitch_norm = np.zeros_like(pitch_2d, dtype=np.float64)
+			pitch_norm[..., 0] = np.where(valid_pitch, pitch_2d[..., 0] / max(W, self.eps), 0.0)
+			pitch_norm[..., 1] = np.where(valid_pitch, pitch_2d[..., 1] / max(H, self.eps), 0.0)
+			out["pitch_points_2d"] = pitch_norm.astype(np.float32)
+			out["valid_pitch_points"] = valid_pitch.astype(bool)
+
 		# Attach normalization meta.
 		meta_norm = {
 			"normalized": True,
@@ -567,6 +599,10 @@ class Normalizer:
 					f"{self.min_bbox_size_px:g}px"
 				),
 			},
+			"pitch_points_2d": (
+				"x/W, y/H for 50 fixed world pitch landmarks; out-of-image points are zeroed "
+				"and masked by valid_pitch_points"
+			),
 			"labels": {
 				"Y_rel_cam_gt": "standardized using train mean/std",
 				"Y_root_cam_gt": "standardized using train mean/std",

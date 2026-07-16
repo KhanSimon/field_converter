@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=6G
 #SBATCH --gres=gpu:L40S:1
-#SBATCH --time=4:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mail-type=START,END,FAIL
 #SBATCH --mail-user=simonkhan160@gmail.com
 #SBATCH --output=slurms/slurm_%j.out

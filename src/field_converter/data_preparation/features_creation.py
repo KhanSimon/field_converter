@@ -30,6 +30,8 @@ Generated outputs::
     data/Y_root_cam_gt/{sequence}.npy
     data/Y_2d_gt/{sequence}.npy
     data/ground_intersection/{sequence}.npy
+    data/pitch_points_2d/{sequence}.npy
+    data/valid_pitch_points/{sequence}.npy
     data/features/{sequence}.npz
 
 Optional SAM3DBody inputs are folded directly into ``data/features/{sequence}.npz``:
@@ -74,7 +76,7 @@ import numpy as np
 
 
 PelvisMode = Literal["hips_mean", "joint8"]
-FOLDER = "features2"
+FOLDER = "features"
 
 
 @dataclass
@@ -123,6 +125,8 @@ class FeatureCreator:
         Noise config for bbox/camera feature augmentation.
     seed:
         Global random seed. Each sequence gets a deterministic derived seed.
+    num_pitch_points:
+        Number of fixed world pitch landmarks projected into every frame.
     """
 
     data_dir: Optional[Path | str] = None
@@ -132,6 +136,7 @@ class FeatureCreator:
     margin_for_boxes: float = 0.15
     noise: NoiseConfig = field(default_factory=NoiseConfig)
     seed: int = 12345
+    num_pitch_points: int = 50
 
     def __post_init__(self) -> None:
         if self.data_dir is None:
@@ -145,6 +150,9 @@ class FeatureCreator:
             self.data_dir = Path(ps.DATA_DIR)
         else:
             self.data_dir = Path(self.data_dir)
+
+        if self.num_pitch_points <= 0:
+            raise ValueError("num_pitch_points must be > 0")
 
         self.dirs = {
             "cameras": self.data_dir / "cameras_gt",
@@ -164,6 +172,8 @@ class FeatureCreator:
             "Y_root_cam_gt": self.data_dir / "Y_root_cam_gt",
             "Y_2d_gt": self.data_dir / "Y_2d_gt",
             "ground_intersection": self.data_dir / "ground_intersection",
+            "pitch_points_2d": self.data_dir / "pitch_points_2d",
+            "valid_pitch_points": self.data_dir / "valid_pitch_points",
             "features": self.data_dir / FOLDER,
         }
         self.sam3dbody_from_bbox_gt_dirs = {
@@ -260,6 +270,9 @@ class FeatureCreator:
             - ``skel_2d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 2)`` SAM2D pixels
             - ``skel_3d_sam3dbody_from_bbox_gt``: optional ``(N, T, J, 3)`` SAM3D camera convention
             - ``ground_intersection``: optional ``(N, T, 3)`` world point on pitch plane
+            - ``pitch_points_world``: ``(50,3)`` fixed world pitch landmarks
+            - ``pitch_points_2d``: ``(T,50,2)`` projected pixels, NaN outside the image
+            - ``valid_pitch_points``: ``(T,50)`` in-image projection mask
         """
         rng = self._rng_for_sequence(sequence)
 
@@ -310,6 +323,13 @@ class FeatureCreator:
         cam_feat_base_noisy, cam_feat_boosted_noisy = self.make_camera_features(
             noisy_camera["K"], noisy_camera["R"], noisy_camera["t"], noisy_camera["k"], image_size=(W, H)
         )
+        pitch_points_world, pitch_points_2d, valid_pitch_points = self.project_pitch_points_to_image(
+            K,
+            R,
+            t,
+            k,
+            image_size=(W, H),
+        )
 
         box_w = boxes_xyxy[..., 2] - boxes_xyxy[..., 0]
         box_h = boxes_xyxy[..., 3] - boxes_xyxy[..., 1]
@@ -343,6 +363,9 @@ class FeatureCreator:
             "t": t.astype(np.float32),
             "k": self._truncate_k(k).astype(np.float32),
             "image_size": np.array([W, H], dtype=np.int32),
+            "pitch_points_world": pitch_points_world.astype(np.float32),
+            "pitch_points_2d": pitch_points_2d.astype(np.float32),
+            "valid_pitch_points": valid_pitch_points.astype(bool),
         }
         self.add_sam3dbody_from_bbox_gt_features(sequence, features, T=T, K=K, R=R, t=t, k=k)
         return features
@@ -368,6 +391,8 @@ class FeatureCreator:
             "Y_root_cam_gt": "Y_root_cam_gt",
             "Y_2d_gt": "Y_2d_gt",
             "ground_intersection": "ground_intersection",
+            "pitch_points_2d": "pitch_points_2d",
+            "valid_pitch_points": "valid_pitch_points",
         }
         for key, dirname in key_to_dir.items():
             if key not in features:
@@ -420,6 +445,16 @@ class FeatureCreator:
                 "(N,T,3), world coordinates. Ray is cast through the SAM2D pixel "
                 "of the SAM3D lowest joint and intersected with the pitch_points plane."
             ),
+            "pitch_points": {
+                "pitch_points_world": (
+                    f"({self.num_pitch_points},3), fixed world landmarks selected from pitch_points.txt "
+                    "with deterministic farthest-point sampling"
+                ),
+                "pitch_points_2d": (
+                    f"(T,{self.num_pitch_points},2), projected pixels; NaN outside the image"
+                ),
+                "valid_pitch_points": f"(T,{self.num_pitch_points}), in-image projection mask",
+            },
             "extrinsic_convention": "X_cam_col = R @ X_world_col + t",
         }
 
@@ -745,6 +780,39 @@ class FeatureCreator:
         X_img[~valid] = np.nan
         return X_img, valid
 
+    def project_pitch_points_to_image(
+        self,
+        K: np.ndarray,
+        R: np.ndarray,
+        t: np.ndarray,
+        k: np.ndarray,
+        *,
+        image_size: Tuple[int, int],
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Project fixed world pitch landmarks and discard out-of-image pixels."""
+        pitch_points_world = self.sample_pitch_points(self.load_pitch_points(), self.num_pitch_points)
+        T = int(K.shape[0])
+        points_ntj3 = np.broadcast_to(
+            pitch_points_world[None, None, :, :],
+            (1, T, self.num_pitch_points, 3),
+        )
+        points_2d, valid = self.project_world_to_image(points_ntj3, K, R, t, k)
+        points_2d = points_2d[0]
+        valid = valid[0]
+
+        W, H = image_size
+        in_image = (
+            np.isfinite(points_2d).all(axis=-1)
+            & (points_2d[..., 0] >= 0.0)
+            & (points_2d[..., 0] < float(W))
+            & (points_2d[..., 1] >= 0.0)
+            & (points_2d[..., 1] < float(H))
+        )
+        valid = valid & in_image
+        points_2d = points_2d.copy()
+        points_2d[~valid] = np.nan
+        return pitch_points_world, points_2d, valid
+
     def compute_ground_intersections_from_sam(
         self,
         sam2d_ntj2: np.ndarray,
@@ -819,6 +887,43 @@ class FeatureCreator:
         intersections[valid] = points[valid].astype(np.float32)
         return intersections
 
+    def load_pitch_points(self) -> np.ndarray:
+        """Load all finite world pitch points from ``data/pitch_points.txt``."""
+        path = self.data_dir / "pitch_points.txt"
+        if not path.exists():
+            raise FileNotFoundError(f"Pitch points file not found: {path}")
+
+        points = np.asarray(np.loadtxt(path, dtype=np.float64), dtype=np.float64).reshape(-1, 3)
+        points = points[np.isfinite(points).all(axis=-1)]
+        if points.shape[0] < 3:
+            raise ValueError(f"Need at least 3 finite pitch points: {path}")
+        return points
+
+    @staticmethod
+    def sample_pitch_points(points: np.ndarray, count: int) -> np.ndarray:
+        """Select spatially distributed, deterministic landmarks from pitch points."""
+        points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        _, unique_indices = np.unique(points, axis=0, return_index=True)
+        points = points[np.sort(unique_indices)]
+        if count > points.shape[0]:
+            raise ValueError(
+                f"Cannot select {count} unique pitch points from only {points.shape[0]} points"
+            )
+
+        selected = np.empty((count,), dtype=np.int64)
+        center = points.mean(axis=0)
+        selected[0] = int(np.argmax(np.sum((points - center) ** 2, axis=-1)))
+        min_dist_sq = np.sum((points - points[selected[0]]) ** 2, axis=-1)
+        min_dist_sq[selected[0]] = -1.0
+
+        for i in range(1, count):
+            selected[i] = int(np.argmax(min_dist_sq))
+            dist_sq = np.sum((points - points[selected[i]]) ** 2, axis=-1)
+            min_dist_sq = np.minimum(min_dist_sq, dist_sq)
+            min_dist_sq[selected[: i + 1]] = -1.0
+
+        return points[selected].astype(np.float32)
+
     def load_pitch_plane(self) -> Tuple[np.ndarray, float]:
         """
         Fit and return the pitch plane from ``data/pitch_points.txt``.
@@ -827,23 +932,14 @@ class FeatureCreator:
         coordinates. Fitting from all points keeps this robust even though the
         current file is effectively the ``z=0`` plane.
         """
-        path = self.data_dir / "pitch_points.txt"
-        if not path.exists():
-            raise FileNotFoundError(f"Pitch points file not found: {path}")
-
-        points = np.loadtxt(path, dtype=np.float64)
-        points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
-        finite = np.isfinite(points).all(axis=-1)
-        points = points[finite]
-        if points.shape[0] < 3:
-            raise ValueError(f"Need at least 3 finite pitch points to fit a plane: {path}")
+        points = self.load_pitch_points()
 
         centroid = points.mean(axis=0)
         _, _, vh = np.linalg.svd(points - centroid, full_matrices=False)
         normal = vh[-1]
         norm = np.linalg.norm(normal)
         if norm < 1e-12:
-            raise ValueError(f"Could not fit a valid pitch plane from {path}")
+            raise ValueError("Could not fit a valid pitch plane from pitch_points.txt")
         normal = normal / norm
         offset = -float(normal @ centroid)
         return normal.astype(np.float64), offset

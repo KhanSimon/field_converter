@@ -18,6 +18,7 @@ input_config:
   use_x3d_sam_rel: true
   use_x2d_img: true
   use_x2d_box: true
+  use_pitch_points_2d: true       # 50 points terrain projetes + masque de visibilite
   use_bbox_feat: true
   bbox_clean_or_noisy: noisy         # clean | noisy
   use_cam_feat: true

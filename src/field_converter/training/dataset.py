@@ -15,6 +15,7 @@ from field_converter.training.root_init import default_root_init_dir, load_root_
 
 
 SplitStr = Literal["train", "valid", "test"]
+NUM_PITCH_POINTS = 50
 
 
 def infer_input_dim(cfg: InputConfig) -> int:
@@ -25,6 +26,8 @@ def infer_input_dim(cfg: InputConfig) -> int:
         dim += 25 * 2
     if cfg.use_x2d_box:
         dim += 25 * 2
+    if cfg.use_pitch_points_2d:
+        dim += NUM_PITCH_POINTS * 2 + NUM_PITCH_POINTS
     if cfg.use_bbox_feat:
         dim += 5
     if cfg.use_cam_feat:
@@ -152,6 +155,8 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             keys.add("skel_2d_sam3dbody_from_bbox_gt")
         if self.input_config.use_x2d_box:
             keys.add("skel_2d_sam3dbody_from_bbox_gt_box")
+        if self.input_config.use_pitch_points_2d:
+            keys.update({"pitch_points_2d", "valid_pitch_points"})
         if self.input_config.use_bbox_feat:
             keys.add(_bbox_feat_key(self.input_config.bbox_clean_or_noisy))
         if self.input_config.use_cam_feat:
@@ -336,6 +341,18 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             x2d_box = np.asarray(payload["skel_2d_sam3dbody_from_bbox_gt_box"][person_idx, frame_idx], dtype=np.float32)  # (25,2)
             _nan_to_num_inplace(x2d_box)
             parts.append(x2d_box.reshape(-1))
+
+        if self.input_config.use_pitch_points_2d:
+            pitch_2d = np.asarray(payload["pitch_points_2d"][frame_idx], dtype=np.float32)
+            valid_pitch = np.asarray(payload["valid_pitch_points"][frame_idx], dtype=bool)
+            if pitch_2d.shape != (NUM_PITCH_POINTS, 2) or valid_pitch.shape != (NUM_PITCH_POINTS,):
+                raise ValueError(
+                    f"Expected {NUM_PITCH_POINTS} pitch points for seq={seq_name}, frame={frame_idx}; "
+                    f"got pitch_points_2d={pitch_2d.shape}, valid_pitch_points={valid_pitch.shape}"
+                )
+            _nan_to_num_inplace(pitch_2d)
+            parts.append(pitch_2d.reshape(-1))
+            parts.append(valid_pitch.astype(np.float32))
 
         if self.input_config.use_bbox_feat:
             bbox_key = _bbox_feat_key(self.input_config.bbox_clean_or_noisy)

@@ -16,6 +16,7 @@ from field_converter.training.tcn.config import PadModeStr
 
 
 SplitStr = Literal["train", "valid", "test"]
+NUM_PITCH_POINTS = 50
 
 
 def _stable_hash_int(text: str) -> int:
@@ -181,6 +182,8 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             keys.add("skel_2d_sam3dbody_from_bbox_gt")
         if self.input_config.use_x2d_box:
             keys.add("skel_2d_sam3dbody_from_bbox_gt_box")
+        if self.input_config.use_pitch_points_2d:
+            keys.update({"pitch_points_2d", "valid_pitch_points"})
         if self.input_config.use_bbox_feat:
             keys.add(_bbox_feat_key(self.input_config.bbox_clean_or_noisy))
         if self.input_config.use_cam_feat:
@@ -541,6 +544,37 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
                     _nan_to_num_inplace(x2d_box[:T])
             x2d_box = _zero_invalid_frames(x2d_box)
             parts.append(x2d_box.reshape(self.window_size, -1))
+
+        if self.input_config.use_pitch_points_2d:
+            if T >= self.window_size or self.pad_mode == "edge":
+                pitch_2d = np.asarray(payload["pitch_points_2d"][frames_fetch], dtype=np.float32)
+                valid_pitch = np.asarray(payload["valid_pitch_points"][frames_fetch], dtype=bool)
+                _nan_to_num_inplace(pitch_2d)
+                if not in_bounds.all():
+                    pitch_2d = pitch_2d.copy()
+                    valid_pitch = valid_pitch.copy()
+                    pitch_2d[~in_bounds] = 0.0
+                    valid_pitch[~in_bounds] = False
+            else:
+                pitch_2d = np.zeros((self.window_size, NUM_PITCH_POINTS, 2), dtype=np.float32)
+                valid_pitch = np.zeros((self.window_size, NUM_PITCH_POINTS), dtype=bool)
+                if T > 0:
+                    pitch_2d[:T] = np.asarray(payload["pitch_points_2d"][:T], dtype=np.float32)
+                    valid_pitch[:T] = np.asarray(payload["valid_pitch_points"][:T], dtype=bool)
+                    _nan_to_num_inplace(pitch_2d[:T])
+
+            if pitch_2d.shape != (self.window_size, NUM_PITCH_POINTS, 2) or valid_pitch.shape != (
+                self.window_size,
+                NUM_PITCH_POINTS,
+            ):
+                raise ValueError(
+                    f"Expected {NUM_PITCH_POINTS} pitch points for seq={seq_name}; "
+                    f"got pitch_points_2d={pitch_2d.shape}, valid_pitch_points={valid_pitch.shape}"
+                )
+            pitch_2d = _zero_invalid_frames(pitch_2d)
+            valid_pitch = _zero_invalid_frames(valid_pitch)
+            parts.append(pitch_2d.reshape(self.window_size, -1))
+            parts.append(valid_pitch.astype(np.float32))
 
         if self.input_config.use_bbox_feat:
             bbox_key = _bbox_feat_key(self.input_config.bbox_clean_or_noisy)

@@ -144,6 +144,7 @@ def load_transformer_run_config(config_path: Path | str) -> TransformerRunConfig
         use_x3d_sam_rel=bool(input_cfg_raw.get("use_x3d_sam_rel", True)),
         use_x2d_img=bool(input_cfg_raw.get("use_x2d_img", False)),
         use_x2d_box=bool(input_cfg_raw.get("use_x2d_box", False)),
+        use_pitch_points_2d=bool(input_cfg_raw.get("use_pitch_points_2d", False)),
         use_bbox_feat=bool(input_cfg_raw.get("use_bbox_feat", True)),
         bbox_clean_or_noisy=str(input_cfg_raw.get("bbox_clean_or_noisy", "noisy")),  # type: ignore[arg-type]
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),

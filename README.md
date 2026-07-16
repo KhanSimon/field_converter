@@ -275,6 +275,8 @@ Le dataset V1 lit (au minimum) les clés suivantes, avec des shapes typiques:
 - `valid_joints`: `(P,T,25)` bool
 - `skel_3d_sam3dbody_from_bbox_gt`: `(P,T,25,3)` **normalisé** (joints relatifs)
 - `Y_root_cam_gt`: `(P,T,3)` **normalisé** (root caméra GT)
+- `pitch_points_2d`: `(T,50,2)` **normalisé** par `(W,H)`; les points hors image valent zéro
+- `valid_pitch_points`: `(T,50)` bool, masque des points terrain visibles
 
 - `K`: `(T,3,3)` float32
 - `R`: `(T,3,3)` float32
@@ -283,6 +285,18 @@ Le dataset V1 lit (au minimum) les clés suivantes, avec des shapes typiques:
 
 - `Y_cam_gt`: `(P,T,25,3)` float32 (mètres)
 - `Y_2d_gt`: `(P,T,25,2)` float32 (pixels)
+
+Les features terrain se régénèrent avec le pipeline habituel :
+
+```bash
+sbatch scripts/feature_engi/feature_creation.sh
+# Une fois le job termine :
+sbatch scripts/feature_engi/normalize.sh
+```
+
+`input_config.use_pitch_points_2d: true` ajoute les 100 coordonnées des 50
+repères ainsi que leur masque de visibilité (50 valeurs), soit 150 dimensions
+par frame. La même entrée est utilisée par le MLP, le TCN et le Transformer.
 
 Entrées optionnelles supportées par `InputConfig` (si présentes dans le `.npz`):
 
