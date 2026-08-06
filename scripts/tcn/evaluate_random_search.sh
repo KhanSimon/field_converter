@@ -31,7 +31,7 @@ nvidia-smi || true
 python -c "import torch; print('torch:', torch.__version__); print('cuda build:', torch.version.cuda); print('available:', torch.cuda.is_available())"
 
 PYTHONPATH=src python scripts/tcn/evaluate_random_search.py \
-  --search-name root_tcn_random_search_v2 \
+  --search-name root_tcn_random_search_delta \
   --output-dir outputs \
   --metric best_root_error_mean_m \
   --top-k 8

@@ -9,6 +9,8 @@ def convert_npz_to_npy(
     sequence_name: str = "ARG_FRA_182345",
     key: str = "root_pred_m",
     fill_value: float = np.nan,
+    num_persons: int | None = None,
+    num_frames: int | None = None,
 ):
     data = np.load(input_npz, allow_pickle=True)
 
@@ -30,27 +32,47 @@ def convert_npz_to_npy(
     frames = frame_idx[mask]
     values = root_pred[mask]
 
+    if persons.size == 0:
+        raise ValueError(f"Aucune prédiction disponible pour la séquence: {sequence_name}")
+    if np.any(persons < 0) or np.any(frames < 0):
+        raise ValueError("person_idx et frame_idx doivent être positifs ou nuls")
+
     unique_persons = np.unique(persons)
     unique_frames = np.unique(frames)
 
-    person_to_out = {p: i for i, p in enumerate(unique_persons)}
-    frame_to_out = {f: i for i, f in enumerate(unique_frames)}
+    # Keep the original person/frame indices. Predictions contain only frames
+    # retained by evaluation filters, so compacting unique indices silently
+    # shifts every person after a missing track (and likewise for frames).
+    inferred_num_persons = int(persons.max()) + 1
+    inferred_num_frames = int(frames.max()) + 1
+    output_num_persons = inferred_num_persons if num_persons is None else int(num_persons)
+    output_num_frames = inferred_num_frames if num_frames is None else int(num_frames)
+
+    if output_num_persons < inferred_num_persons:
+        raise ValueError(
+            f"num_persons={output_num_persons} est trop petit pour person_idx max={int(persons.max())}"
+        )
+    if output_num_frames < inferred_num_frames:
+        raise ValueError(
+            f"num_frames={output_num_frames} est trop petit pour frame_idx max={int(frames.max())}"
+        )
 
     output = np.full(
-        (len(unique_persons), len(unique_frames), 3),
+        (output_num_persons, output_num_frames, 3),
         fill_value,
         dtype=values.dtype,
     )
 
-    for p, f, xyz in zip(persons, frames, values):
-        output[person_to_out[p], frame_to_out[f]] = xyz
+    output[persons.astype(np.int64), frames.astype(np.int64)] = values
 
     np.save(output_npy, output)
 
     print(f"Sequence: {sequence_name}")
     print(f"Input key: {key}")
-    print(f"Persons: {len(unique_persons)}")
-    print(f"Frames: {len(unique_frames)}")
+    print(f"Observed persons: {len(unique_persons)}")
+    print(f"Observed frames: {len(unique_frames)}")
+    print(f"Dense persons: {output_num_persons}")
+    print(f"Dense frames: {output_num_frames}")
     print(f"Output shape: {output.shape}")
     print(f"Saved to: {output_npy}")
 
@@ -61,6 +83,18 @@ if __name__ == "__main__":
     parser.add_argument("output_npy")
     parser.add_argument("--sequence", default="ARG_FRA_182345")
     parser.add_argument("--key", default="root_pred_m")
+    parser.add_argument(
+        "--num-persons",
+        type=int,
+        default=None,
+        help="Nombre total de joueurs attendu; par défaut person_idx.max() + 1.",
+    )
+    parser.add_argument(
+        "--num-frames",
+        type=int,
+        default=None,
+        help="Nombre total de frames attendu; par défaut frame_idx.max() + 1.",
+    )
 
     args = parser.parse_args()
 
@@ -69,6 +103,8 @@ if __name__ == "__main__":
         output_npy=args.output_npy,
         sequence_name=args.sequence,
         key=args.key,
+        num_persons=args.num_persons,
+        num_frames=args.num_frames,
     )
 
-#PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/root_tcn_grid_search_rs1_trial_002/test_predictions.npz ARG_FRA_182345_root_pred.npy
+# PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/root_transformer_v1_delta_new_root_init/valid_predictions.npz ARG_FRA_203048.npy --sequence ARG_FRA_203048

@@ -26,6 +26,8 @@ class MetricsAccumulator:
     _mpjpe_cam_count: int = 0
     _mpjpe_world_sum: float = 0.0
     _mpjpe_world_count: int = 0
+    _mpjpe_local_sum: float = 0.0
+    _mpjpe_local_count: int = 0
 
     # Reprojection errors (store valid values for median)
     _reproj_errors: list[np.ndarray] = field(default_factory=list)
@@ -95,6 +97,19 @@ class MetricsAccumulator:
             self._mpjpe_world_sum += float(vals_world.sum().item())
             self._mpjpe_world_count += int(vals_world.numel())
 
+        # ---- MPJPE (player-local, translation removed)
+        # Each skeleton gets its own pelvis as origin: the predicted pelvis for
+        # the prediction and the GT pelvis for the target. Camera/world axes are
+        # kept unchanged, so this removes translation only (no rotation or
+        # scale alignment).
+        X_local_pred = X_cam_pred - root_pred_m.unsqueeze(-2)
+        Y_local_gt = Y_cam_gt - root_gt_m.unsqueeze(-2)
+        dist_local = torch.linalg.norm(X_local_pred - Y_local_gt, dim=-1)  # (B,25)
+        vals_local = dist_local[mask]
+        if vals_local.numel() > 0:
+            self._mpjpe_local_sum += float(vals_local.sum().item())
+            self._mpjpe_local_count += int(vals_local.numel())
+
         # ---- Reprojection error (pixels)
         uv_pred = project_cam_to_image(X_cam_pred, K=K, k=k)
         dist_px = torch.linalg.norm(uv_pred - Y_2d_gt, dim=-1)  # (B,25)
@@ -125,16 +140,25 @@ class MetricsAccumulator:
             metrics["root_error_y_m"] = float("nan")
             metrics["root_error_z_m"] = float("nan")
 
-        metrics["MPJPE_cam_m"] = (
+        mpjpe_cam = (
             float(self._mpjpe_cam_sum / self._mpjpe_cam_count)
             if self._mpjpe_cam_count > 0
             else float("nan")
         )
-        metrics["MPJPE_world_m"] = (
+        metrics["MPJPE_cam_m"] = mpjpe_cam
+        mpjpe_world = (
             float(self._mpjpe_world_sum / self._mpjpe_world_count)
             if self._mpjpe_world_count > 0
             else float("nan")
         )
+        metrics["MPJPE_world_m"] = mpjpe_world
+        mpjpe_local = (
+            float(self._mpjpe_local_sum / self._mpjpe_local_count)
+            if self._mpjpe_local_count > 0
+            else float("nan")
+        )
+        metrics["MPJPE_local_m"] = mpjpe_local
+        metrics["challenge_points"] = 5*mpjpe_local + mpjpe_world
 
         if self._reproj_count > 0 and self._reproj_errors:
             reproj_all = np.concatenate(self._reproj_errors, axis=0)

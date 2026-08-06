@@ -209,6 +209,7 @@ class EvalConfig:
 class PlotsConfig:
     enabled: bool = True
     split_for_plots: Literal["train", "valid", "test"] = "valid"
+    root_error_ground_vs_air_histogram: bool = False
     seq_name: Optional[str] = None
     person_idx: Optional[int] = None
     num_frames_overlay: int = 6

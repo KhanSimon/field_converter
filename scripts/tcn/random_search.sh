@@ -26,10 +26,13 @@ python -c "import torch; print('torch:', torch.__version__); print('cuda build:'
 
 PYTHONPATH=src python scripts/tcn/random_search.py \
   --base-config configs/tcn/best_config_rs_1.yaml \
-  --search-name root_tcn_random_search_temporal \
+  --search-name root_tcn_random_search_delta \
   --n-trials 12 \
   --seed 1234 \
   --output-dir outputs \
+  --epochs 20 \
+  --max-sequences 20 \
+  --max-windows-per-sequence 500 \
   --skip-existing
 
 echo "Done"

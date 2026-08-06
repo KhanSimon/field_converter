@@ -95,13 +95,24 @@ def compute_root_init_cam(payload: Dict[str, np.ndarray], creator: FeatureCreato
     lowest_idx, has_joint = _lowest_joint_indices(sam2d, sam3d)
     n_idx = np.arange(sam3d.shape[0])[:, None]
     t_idx = np.arange(sam3d.shape[1])[None, :]
-    lowest_rel_cam = sam3d[n_idx, t_idx, lowest_idx]
+    lowest_cam_sam = sam3d[n_idx, t_idx, lowest_idx]
+
+    # Raw SAM3DBody joints are not pelvis-centred (their origin is close to
+    # the feet in the current exports). Convert the selected joint to the
+    # same pelvis-relative convention used by normalized SAM3D features.
+    pelvis_cam_sam = creator.compute_pelvis(sam3d, mode=creator.pelvis_mode)
+    lowest_rel_cam = lowest_cam_sam - pelvis_cam_sam
 
     lowest_world = creator.compute_ground_intersections_from_sam(sam2d, sam3d, K, R, t, k)
     lowest_cam = _world_to_camera_points(np.asarray(lowest_world, dtype=np.float64), R, t)
 
     root_init_cam = lowest_cam - lowest_rel_cam
-    valid = has_joint & np.isfinite(lowest_world).all(axis=-1) & np.isfinite(lowest_rel_cam).all(axis=-1)
+    valid = (
+        has_joint
+        & np.isfinite(lowest_world).all(axis=-1)
+        & np.isfinite(lowest_rel_cam).all(axis=-1)
+        & np.isfinite(pelvis_cam_sam).all(axis=-1)
+    )
     root_init_cam[~valid] = np.nan
     return root_init_cam.astype(np.float32)
 

@@ -189,7 +189,8 @@ Même principe pour la 2d reprojetée en pixels.
   - métriques produites:
     - `root_error_mean_m`, `root_error_median_m`, `root_error_p90_m`
     - `root_error_x_m`, `root_error_y_m`, `root_error_z_m` (erreur abs moyenne par axe)
-    - `MPJPE_cam_m`, `MPJPE_world_m` (masqué `valid_joints`)
+    - `MPJPE_cam_m`, `MPJPE_world_m` (coordonnées globales, masqué `valid_joints`)
+    - `MPJPE_local_m` (pelvis de chaque joueur comme origine, sans alignement en rotation/scale)
     - `reprojection_error_mean_px`, `reprojection_error_median_px` (masqué)
 - `src/field_converter/evaluation/evaluator.py`:
   - `Evaluator.evaluate_split(model, dataloader, out_dir, split_name)`

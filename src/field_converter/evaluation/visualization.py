@@ -416,6 +416,200 @@ def plot_root_diagnostic_plots(
         )
 
 
+def _prediction_airborne_masks(
+    *,
+    data_dir: Path,
+    split: str,
+    pred: Dict[str, Any],
+    airborne_threshold_m: float = 0.05,
+    ground_reference_percentile: float = 20.0,
+    ground_reference_window_frames: int = 125,
+    min_airborne_frames: int = 2,
+    max_ground_gap_frames: int = 1,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return airborne and classifiable masks aligned with prediction rows.
+
+    Airborne phases use the same GT 3D definition as
+    ``utils.analyze_airborne_root_error``: both BODY-25 feet must clear their
+    local observed ground-contact reference by at least 5 cm.
+    """
+    from field_converter.utils.analyze_airborne_root_error import (
+        DEFAULT_LEFT_FOOT_JOINTS,
+        DEFAULT_RIGHT_FOOT_JOINTS,
+        calibrate_foot_clearance,
+        clean_airborne_mask,
+        compute_foot_heights,
+        fit_pitch_plane,
+    )
+
+    seq_names = [str(name) for name in pred.get("seq_names", [])]
+    seq_ids = np.asarray(pred["seq_id"], dtype=np.int32).reshape(-1)
+    person_indices = np.asarray(pred["person_idx"], dtype=np.int32).reshape(-1)
+    frame_indices = np.asarray(pred["frame_idx"], dtype=np.int32).reshape(-1)
+    if not (seq_ids.shape == person_indices.shape == frame_indices.shape):
+        raise ValueError("seq_id, person_idx and frame_idx must have identical shapes")
+
+    airborne_out = np.zeros(seq_ids.shape, dtype=bool)
+    classifiable_out = np.zeros(seq_ids.shape, dtype=bool)
+
+    for seq_id in sorted(int(value) for value in np.unique(seq_ids) if int(value) >= 0):
+        if seq_id >= len(seq_names):
+            raise ValueError(f"Prediction seq_id={seq_id} has no matching seq_names entry")
+        sequence = seq_names[seq_id]
+        feature_path = data_dir / split / f"{sequence}.npz"
+        if not feature_path.exists():
+            raise FileNotFoundError(f"Missing GT features for airborne plot: {feature_path}")
+
+        with np.load(feature_path, allow_pickle=True) as npz:
+            required = ("Y_cam_gt", "Y_root_cam_gt", "R", "t", "valid_mask", "pitch_points_world")
+            missing = [key for key in required if key not in npz.files]
+            if missing:
+                raise KeyError(f"{feature_path}: missing keys required by airborne plot: {missing}")
+            Y_cam_gt = np.asarray(npz["Y_cam_gt"], dtype=np.float64)
+            root_cam_gt = np.asarray(npz["Y_root_cam_gt"], dtype=np.float64)
+            R = np.asarray(npz["R"], dtype=np.float64)
+            t = np.asarray(npz["t"], dtype=np.float64)
+            valid_mask = np.asarray(npz["valid_mask"], dtype=bool)
+            pitch_points_world = np.asarray(npz["pitch_points_world"], dtype=np.float64)
+
+        plane_normal, plane_offset = fit_pitch_plane(pitch_points_world)
+        foot_joint_indices = (*DEFAULT_LEFT_FOOT_JOINTS, *DEFAULT_RIGHT_FOOT_JOINTS)
+        Y_cam_feet_gt = Y_cam_gt[:, :, foot_joint_indices, :]
+        left_plane_height, right_plane_height, _ = compute_foot_heights(
+            # Transform only the six toe/heel joints needed by this plot,
+            # instead of all 25 GT joints.
+            Y_cam_gt=Y_cam_feet_gt,
+            root_cam_gt=root_cam_gt,
+            R=R,
+            t=t,
+            plane_normal=plane_normal,
+            plane_offset=plane_offset,
+            left_foot_joints=(0, 1, 2),
+            right_foot_joints=(3, 4, 5),
+        )
+        height_valid = valid_mask & np.isfinite(left_plane_height) & np.isfinite(right_plane_height)
+        left_clearance, right_clearance, _, _, _ = calibrate_foot_clearance(
+            left_plane_height,
+            right_plane_height,
+            height_valid,
+            ground_reference_percentile=ground_reference_percentile,
+            ground_reference_window_frames=ground_reference_window_frames,
+        )
+        gt_valid = height_valid & np.isfinite(left_clearance) & np.isfinite(right_clearance)
+        sequence_airborne = np.zeros_like(gt_valid)
+
+        prediction_rows = np.flatnonzero(seq_ids == seq_id)
+        predicted_people = np.unique(person_indices[prediction_rows])
+        for person_idx in predicted_people:
+            if person_idx < 0 or person_idx >= gt_valid.shape[0]:
+                continue
+            candidate = (
+                gt_valid[person_idx]
+                & (left_clearance[person_idx] >= airborne_threshold_m)
+                & (right_clearance[person_idx] >= airborne_threshold_m)
+            )
+            sequence_airborne[person_idx] = clean_airborne_mask(
+                candidate,
+                gt_valid[person_idx],
+                min_airborne_frames=min_airborne_frames,
+                max_ground_gap_frames=max_ground_gap_frames,
+            )
+
+        people = person_indices[prediction_rows]
+        frames = frame_indices[prediction_rows]
+        in_bounds = (
+            (people >= 0)
+            & (people < gt_valid.shape[0])
+            & (frames >= 0)
+            & (frames < gt_valid.shape[1])
+        )
+        bounded_rows = prediction_rows[in_bounds]
+        bounded_people = people[in_bounds]
+        bounded_frames = frames[in_bounds]
+        row_is_valid = gt_valid[bounded_people, bounded_frames]
+        valid_rows = bounded_rows[row_is_valid]
+        valid_people = bounded_people[row_is_valid]
+        valid_frames = bounded_frames[row_is_valid]
+        classifiable_out[valid_rows] = True
+        airborne_out[valid_rows] = sequence_airborne[valid_people, valid_frames]
+
+    return airborne_out, classifiable_out
+
+
+def plot_root_error_ground_vs_air_histogram(
+    *,
+    data_dir: Path,
+    split: str,
+    predictions_npz: Path,
+    out_path: Path,
+    density: bool = False,
+    num_bins: int = 60,
+) -> None:
+    """Plot root-error distributions for ground and airborne GT frames.
+
+    By default, the histogram shows actual frame counts (``density=False``),
+    so the large ground/air class imbalance remains visible.
+    """
+    pred = load_predictions_npz(predictions_npz)
+    root_error = np.asarray(pred["root_error_m"], dtype=np.float64).reshape(-1)
+    airborne, classifiable = _prediction_airborne_masks(
+        data_dir=Path(data_dir),
+        split=split,
+        pred=pred,
+    )
+    if root_error.shape != airborne.shape:
+        raise ValueError(
+            f"root_error_m and prediction metadata are misaligned: {root_error.shape} vs {airborne.shape}"
+        )
+
+    finite = classifiable & np.isfinite(root_error) & (root_error >= 0.0)
+    ground_error = root_error[finite & ~airborne]
+    airborne_error = root_error[finite & airborne]
+    pooled = root_error[finite]
+
+    _ensure_dir(out_path.parent)
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5.5))
+    if pooled.size:
+        upper = max(0.1, float(np.percentile(pooled, 99.5)))
+        bins = np.linspace(0.0, upper, max(2, int(num_bins)) + 1)
+        # Preserve every frame count while keeping a readable x-axis: the
+        # upper 0.5% tail is accumulated in the final visible bin.
+        clip_max = np.nextafter(upper, 0.0)
+        ground_for_plot = np.minimum(ground_error, clip_max)
+        airborne_for_plot = np.minimum(airborne_error, clip_max)
+        if ground_for_plot.size:
+            ax.hist(
+                ground_for_plot,
+                bins=bins,
+                density=density,
+                alpha=0.55,
+                color="tab:gray",
+                label=f"Ground (N frames={ground_error.size:,})",
+            )
+        if airborne_for_plot.size:
+            ax.hist(
+                airborne_for_plot,
+                bins=bins,
+                density=density,
+                alpha=0.65,
+                color="tab:orange",
+                label=f"Airborne (N frames={airborne_error.size:,})",
+            )
+        ax.set_xlim(0.0, upper)
+    else:
+        ax.text(0.5, 0.5, "No classifiable finite frames", transform=ax.transAxes, ha="center", va="center")
+
+    ax.set_xlabel(r"$\|root_{pred} - root_{GT}\|_2$ (m)")
+    ax.set_ylabel("Density" if density else "Number of frames")
+    ax.set_title(f"Root error on ground vs airborne frames - {split}")
+    ax.grid(axis="y", alpha=0.25)
+    if ground_error.size or airborne_error.size:
+        ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=180)
+    plt.close(fig)
+
+
 def plot_training_curves(
     *,
     train_log_csv: Path,
@@ -758,6 +952,7 @@ def plot_model_vs_baseline(
         ("root_error_mean_m", "Root mean (m)"),
         ("MPJPE_cam_m", "MPJPE cam (m)"),
         ("MPJPE_world_m", "MPJPE world (m)"),
+        ("MPJPE_local_m", "MPJPE local (m)"),
     ]
 
     model_vals = [float(model_metrics.get(k, float("nan"))) for k, _ in keys]

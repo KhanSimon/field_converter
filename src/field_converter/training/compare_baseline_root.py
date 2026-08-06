@@ -155,7 +155,7 @@ def main() -> None:
         b = baseline_report[split]
 
         comp: Dict[str, float] = {}
-        for key in ["root_error_mean_m", "MPJPE_cam_m", "MPJPE_world_m"]:
+        for key in ["root_error_mean_m", "MPJPE_cam_m", "MPJPE_world_m", "MPJPE_local_m"]:
             bval = float(b.get(key, float("nan")))
             mval = float(m.get(key, float("nan")))
             abs_gain, rel_gain = _gain(bval, mval)

@@ -233,6 +233,9 @@ def load_transformer_run_config(config_path: Path | str) -> TransformerRunConfig
     plots_cfg = PlotsConfig(
         enabled=bool(plots_raw.get("enabled", True)),
         split_for_plots=str(plots_raw.get("split_for_plots", "valid")),  # type: ignore[arg-type]
+        root_error_ground_vs_air_histogram=bool(
+            plots_raw.get("root_error_ground_vs_air_histogram", False)
+        ),
         seq_name=plots_raw.get("seq_name"),
         person_idx=plots_raw.get("person_idx"),
         num_frames_overlay=int(plots_raw.get("num_frames_overlay", 6)),

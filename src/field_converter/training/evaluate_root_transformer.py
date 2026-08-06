@@ -14,6 +14,7 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 from field_converter.evaluation.temporal_evaluator import TemporalEvaluator
 from field_converter.evaluation.visualization import (
     plot_reprojection_overlay,
+    plot_root_error_ground_vs_air_histogram,
     plot_root_timeseries,
     plot_training_curves,
     plot_world_trajectory_xy,
@@ -165,7 +166,13 @@ def _comparison_table(
     transformer_report: Dict[str, Dict[str, float]],
     other_reports: Dict[str, Dict[str, Dict[str, float]]],
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
-    keys = ["root_error_mean_m", "MPJPE_cam_m", "MPJPE_world_m", "reprojection_error_mean_px"]
+    keys = [
+        "root_error_mean_m",
+        "MPJPE_cam_m",
+        "MPJPE_world_m",
+        "MPJPE_local_m",
+        "reprojection_error_mean_px",
+    ]
     out: Dict[str, Dict[str, Dict[str, float]]] = {}
     for split, tr_metrics in transformer_report.items():
         split_out: Dict[str, Dict[str, float]] = {}
@@ -378,6 +385,13 @@ def main() -> None:
         split_p = cfg.plots.split_for_plots
         pred_npz = cfg.predictions_dir / f"{split_p}_predictions.npz"
         if pred_npz.exists():
+            if cfg.plots.root_error_ground_vs_air_histogram:
+                plot_root_error_ground_vs_air_histogram(
+                    data_dir=cfg.data_dir,
+                    split=split_p,
+                    predictions_npz=pred_npz,
+                    out_path=plots_dir / f"root_error_ground_vs_air_histogram_{split_p}.png",
+                )
             plot_root_timeseries(
                 predictions_npz=pred_npz,
                 out_path=plots_dir / f"root_xyz_timeseries_{split_p}.png",

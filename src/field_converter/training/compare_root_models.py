@@ -96,6 +96,7 @@ def main() -> None:
         ("root_error_mean_m", "Root mean (m)"),
         ("MPJPE_cam_m", "MPJPE cam (m)"),
         ("MPJPE_world_m", "MPJPE world (m)"),
+        ("MPJPE_local_m", "MPJPE local (m)"),
         ("reprojection_error_mean_px", "Reproj mean (px)"),
     ]
 
