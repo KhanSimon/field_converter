@@ -11,6 +11,7 @@ pixel, camera ray, or ground intersection is invalid.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
@@ -18,6 +19,9 @@ import numpy as np
 
 from field_converter import pathseeker as ps
 from field_converter.data_preparation.features_creation import FeatureCreator
+
+
+ROOT_INIT_GENERATION_VERSION = 2
 
 
 def _load_npz_payload(path: Path) -> Dict[str, np.ndarray]:
@@ -124,13 +128,17 @@ def generate_all(
     out_dirname: str,
     sequences: Iterable[str],
     overwrite: bool,
+    pelvis_mode: str = "hips_mean",
 ) -> int:
-    creator = FeatureCreator(data_dir=data_dir)
+    if pelvis_mode not in {"hips_mean", "joint8"}:
+        raise ValueError(f"Unsupported pelvis mode: {pelvis_mode}")
+    creator = FeatureCreator(data_dir=data_dir, pelvis_mode=pelvis_mode)  # type: ignore[arg-type]
     features_dir = data_dir / features_dirname
     out_dir = data_dir / out_dirname
     out_dir.mkdir(parents=True, exist_ok=True)
 
     written = 0
+    sequences = tuple(sequences)
     for sequence in sequences:
         in_path = features_dir / f"{sequence}.npz"
         out_path = out_dir / f"{sequence}.npy"
@@ -146,6 +154,15 @@ def generate_all(
         np.save(out_path, root_init)
         written += 1
 
+    meta = {
+        "generation_version": ROOT_INIT_GENERATION_VERSION,
+        "pelvis_mode": pelvis_mode,
+        "formula": "ground_hit_cam - (lowest_sam_joint_cam - sam_pelvis_cam)",
+        "features_dir": str(features_dir),
+        "num_requested_sequences": len(sequences),
+    }
+    (out_dir / "root_init_generation_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
     return written
 
 
@@ -155,6 +172,12 @@ def _build_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--features-dirname", type=str, default="features", help="Input consolidated features folder")
     parser.add_argument("--out-dirname", type=str, default="root_init_cam", help="Output folder under data-dir")
     parser.add_argument("--sequences-file", type=str, default="sequences_gt.txt", help="Sequence list under data-dir")
+    parser.add_argument(
+        "--pelvis-mode",
+        choices=("hips_mean", "joint8"),
+        default="hips_mean",
+        help="Pelvis convention used to recover the root (default: hips_mean)",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing root init .npy files")
     return parser
 
@@ -169,6 +192,7 @@ def main() -> None:
         out_dirname=args.out_dirname,
         sequences=sequences,
         overwrite=bool(args.overwrite),
+        pelvis_mode=str(args.pelvis_mode),
     )
     print(f"Done. Wrote {written} root-init files under {data_dir / args.out_dirname}.")
 

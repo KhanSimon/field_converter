@@ -632,6 +632,40 @@ class Normalizer:
 	) -> NormalizationStats:
 		sequences = self.read_sequences()
 		train, valid, test = self.split_sequences(sequences, train_n, valid_n, test_n, seed)
+		return self.run_with_split(
+			{"train": train, "valid": valid, "test": test},
+			seed=seed,
+			overwrite=overwrite,
+		)
+
+	def run_with_split(
+		self,
+		split_to_sequences: Dict[str, Iterable[str]],
+		*,
+		seed: int = 12345,
+		overwrite: bool = False,
+	) -> NormalizationStats:
+		"""Normalize an explicit sequence split using train-only statistics."""
+		expected = {"train", "valid", "test"}
+		if set(split_to_sequences) != expected:
+			raise ValueError(f"Explicit split must contain exactly {sorted(expected)}")
+
+		all_available = set(self.read_sequences())
+		split = {name: tuple(split_to_sequences[name]) for name in ("train", "valid", "test")}
+		if not split["train"]:
+			raise ValueError("Explicit split must contain at least one training sequence")
+
+		flat = [seq for name in ("train", "valid", "test") for seq in split[name]]
+		if len(flat) != len(set(flat)):
+			raise ValueError("A sequence appears in more than one explicit split")
+		unknown = sorted(set(flat) - all_available)
+		missing = sorted(all_available - set(flat))
+		if unknown:
+			raise ValueError(f"Unknown sequences in explicit split: {unknown}")
+		if missing:
+			raise ValueError(f"Explicit split does not assign every sequence: {missing}")
+
+		train, valid, test = split["train"], split["valid"], split["test"]
 
 		# Compute train-only stats.
 		stats = self.compute_train_stats(train, seed=seed, valid_sequences=valid, test_sequences=test)

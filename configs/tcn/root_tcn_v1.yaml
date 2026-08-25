@@ -3,7 +3,7 @@ seed: 123
 device: auto
 prediction_mode: absolute  # absolute | delta ; delta => root_pred_norm = root_init_norm + delta_pred_norm
 root_init_dir: auto         # auto -> data/root_init_cam_normalized
-data_dir: auto
+data_dir: data/features_normalized  # dossier de features normalisées utilisé pour le training
 output_dir: outputs
 
 input_config:

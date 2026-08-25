@@ -1,0 +1,81 @@
+campaign_name: unseen_match_v1
+data_dir: data
+data_output_root: data/ablation
+output_root: outputs/ablation
+
+base_configs:
+  tcn: configs/ablation/base_tcn_delta_pitch.yaml
+  transformer: configs/ablation/base_transformer_delta_pitch.yaml
+  mlp: configs/ablation/base_mlp_delta_pitch.yaml
+
+source_runs:
+  tcn: root_tcn_random_search_v2_trial_001_delta_mode_pitch_points
+  transformer: root_transformer_v1_delta_new_root_init
+  mlp: root_mlp_v1_train
+
+# Every sequence from one match is assigned to exactly one split. Statistics
+# are fitted on each fold's training matches only.
+folds:
+  primary:
+    valid_match: BRA_KOR
+    test_match: ENG_FRA
+  secondary:
+    valid_match: BRA_KOR
+    test_match: CRO_MOR
+
+preprocessing:
+  sequences_file: sequences_gt.txt
+  raw_features_dirname: features
+  raw_root_init_dirname: root_init_cam
+  pelvis_mode: hips_mean
+  min_bbox_size_px: 10.0
+  seed: 12345
+
+design:
+  primary_fold: primary
+  confirmation_folds: [secondary]
+  base_seed: 1235
+  repeat_seeds: [2027]
+  expected_hours_per_run: 4.5
+  max_runs: 26
+  max_gpu_hours: 120.0
+  include_absolute: true
+  include_absolute_with_root_init: true
+  include_temporal_controls: true
+  include_mlp: true
+
+  # Swap the context lengths to distinguish architecture from temporal context.
+  temporal_windows:
+    tcn: 201
+    tcn_stride: 20
+    transformer: 41
+    transformer_stride: 8
+
+  input_ablations:
+    no_sam3d:
+      label: without direct SAM3D input
+      disable: [use_x3d_sam_rel]
+    no_player_2d:
+      label: without player 2D inputs
+      disable: [use_x2d_img, use_x2d_box, use_bbox_feat]
+    no_camera:
+      label: without camera features
+      disable: [use_cam_feat]
+    no_pitch_points:
+      label: without projected pitch points
+      disable: [use_pitch_points_2d]
+    no_ground_intersection:
+      label: without direct ground intersection
+      disable: [use_ground_intersection]
+    valid_joints_toggle:
+      label: with the opposite valid-joint-mask setting
+      updates_by_architecture:
+        tcn:
+          use_valid_joints_as_input: false
+        transformer:
+          use_valid_joints_as_input: true
+
+statistics:
+  bootstrap_samples: 2000
+  bootstrap_seed: 314159
+  confidence_level: 0.95

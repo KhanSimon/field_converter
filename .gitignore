@@ -9,6 +9,7 @@ outputs/
 play_vizu/
 !src/field_converter/play_vizu/
 !src/field_converter/play_vizu/**
+tests/
 
 .vscode/
 .env
@@ -17,4 +18,5 @@ __pycache__/
 
 .cache
 .pytest_cache
+.mypy_cache
 .cache/matplotlib

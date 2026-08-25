@@ -22,4 +22,7 @@ cd /home/BeeGFS/Laboratories/IBHGC/skhan/Documents/field_converter
 
 mkdir -p slurms
 
-PYTHONPATH=src python -m field_converter.data_preparation.generate_root_init --features-dirname features --overwrite
+PYTHONPATH=src python -m field_converter.data_preparation.generate_root_init \
+  --features-dirname features \
+  --pelvis-mode hips_mean \
+  --overwrite

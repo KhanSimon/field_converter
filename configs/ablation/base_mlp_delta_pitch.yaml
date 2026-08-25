@@ -1,0 +1,69 @@
+run_name: base_mlp_delta_pitch
+seed: 1235
+device: auto
+prediction_mode: delta
+root_init_dir: auto
+data_dir: data/features_normalized
+output_dir: outputs
+
+input_config:
+  use_x3d_sam_rel: true
+  use_x2d_img: true
+  use_x2d_box: true
+  use_pitch_points_2d: true
+  use_bbox_feat: true
+  bbox_clean_or_noisy: clean
+  use_cam_feat: true
+  cam_feat_type: boosted_clean
+  use_ground_intersection: true
+  use_root_init_as_input: false
+  use_valid_joints_as_input: true
+
+dataset:
+  max_sequences: null
+  max_samples_per_sequence: null
+  subsample_stride: 1
+  min_in_image_joints_ratio: 1.0
+  min_bbox_width_px: 12
+  min_bbox_height_px: 8
+  min_bbox_margin_px: 15
+
+model:
+  hidden_dims: [256, 256, 128]
+  activation: gelu
+  dropout: 0.1
+
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0001
+
+training:
+  batch_size: 512
+  epochs: 30
+  num_workers: 2
+  group_batches_by_sequence: true
+  grad_clip_norm: 1.0
+  early_stopping_patience: 10
+
+loss_weights:
+  root: 1.0
+  root_axis_weights: [1.0, 1.0, 1.0]
+  cam3d: 0.0
+  proj: 0.0
+
+eval:
+  splits: [valid, test]
+  batch_size: 1024
+  num_workers: 2
+  save_predictions_npz: true
+  save_predictions_csv: false
+
+plots:
+  enabled: false
+  split_for_plots: valid
+  seq_name: null
+  person_idx: null
+  num_frames_overlay: 6
+  show_sam2d_overlay: false
+  num_players_per_subplot: null
+

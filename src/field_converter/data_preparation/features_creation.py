@@ -76,7 +76,7 @@ import numpy as np
 
 
 PelvisMode = Literal["hips_mean", "joint8"]
-FOLDER = "features"
+FOLDER = "features_wo_k"
 
 
 @dataclass
@@ -127,6 +127,9 @@ class FeatureCreator:
         Global random seed. Each sequence gets a deterministic derived seed.
     num_pitch_points:
         Number of fixed world pitch landmarks projected into every frame.
+    k_to_zero:
+        If True, ignore radial distortion by replacing ``k1`` and ``k2`` with
+        zeros everywhere (projections, rays and camera features).
     """
 
     data_dir: Optional[Path | str] = None
@@ -137,6 +140,7 @@ class FeatureCreator:
     noise: NoiseConfig = field(default_factory=NoiseConfig)
     seed: int = 12345
     num_pitch_points: int = 50
+    k_to_zero: bool = False
 
     def __post_init__(self) -> None:
         if self.data_dir is None:
@@ -423,6 +427,7 @@ class FeatureCreator:
                 "when pelvis_mode='hips_mean'"
             ),
             "k": "stored with the last 3 distortion columns removed when present",
+            "k_to_zero": self.k_to_zero,
             "sam3dbody_from_bbox_gt": {
                 "skel_2d_sam3dbody_from_bbox_gt": "(N,T,J,2), image coordinates, no sign flip",
                 "skel_3d_sam3dbody_from_bbox_gt": (
@@ -477,6 +482,14 @@ class FeatureCreator:
         for key in ("K", "R", "t", "k"):
             if key not in data:
                 raise KeyError(f"Camera file {path} missing key '{key}'")
+        if self.k_to_zero:
+            k = np.asarray(data["k"]).copy()
+            if k.ndim != 2 or k.shape[1] < 2:
+                raise ValueError(
+                    f"Camera file {path} must contain at least k1 and k2; got k shape {k.shape}"
+                )
+            k[:, :2] = 0
+            data["k"] = k
         return {key: np.asarray(data[key]) for key in ("K", "R", "t", "k")}
 
     def load_boxes(self, sequence: str) -> np.ndarray:
@@ -1160,7 +1173,8 @@ class FeatureCreator:
         K_n[:, 1, 1] *= 1.0 + rng.normal(0.0, self.noise.focal_rel_std, size=T)
         K_n[:, 0, 2] += rng.normal(0.0, self.noise.principal_rel_std * W, size=T)
         K_n[:, 1, 2] += rng.normal(0.0, self.noise.principal_rel_std * H, size=T)
-        k_n += rng.normal(0.0, self.noise.distortion_std, size=k_n.shape)
+        if not self.k_to_zero:
+            k_n += rng.normal(0.0, self.noise.distortion_std, size=k_n.shape)
 
         # Extrinsics: small random rotation left-multiplied in camera/world-to-camera convention.
         rot_std_rad = np.deg2rad(self.noise.rotation_deg_std)
@@ -1419,6 +1433,7 @@ if __name__ == "__main__":
         image_size=(1920, 1080),          # safer: set explicitly, e.g. image_size=(1920, 1080)
         pelvis_mode="hips_mean", # or "joint8"
         seed=12345,
+        k_to_zero=False,  # True to ignore radial distortion (k1=k2=0)
     )
     creator.create_all(
         overwrite=True,

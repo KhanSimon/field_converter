@@ -34,6 +34,8 @@ def infer_input_dim(cfg: InputConfig) -> int:
         dim += 6 if cfg.cam_feat_type.startswith("base_") else 12
     if cfg.use_ground_intersection:
         dim += 3
+    if cfg.use_root_init_as_input:
+        dim += 3
     if cfg.use_valid_joints_as_input:
         dim += 25
     return dim
@@ -98,6 +100,7 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         if self.prediction_mode not in {"absolute", "delta"}:
             raise ValueError(f"prediction_mode must be 'absolute' or 'delta' (got {self.prediction_mode!r})")
         self.root_init_dir = Path(root_init_dir) if root_init_dir is not None else default_root_init_dir(self.data_dir)
+        self.requires_root_init = self.prediction_mode == "delta" or self.input_config.use_root_init_as_input
         self.seed = int(seed)
         self.max_sequences = max_sequences
         self.max_samples_per_sequence = max_samples_per_sequence
@@ -269,7 +272,7 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
                 if k in available:
                     payload[k] = npz[k]
 
-        if self.prediction_mode == "delta":
+        if self.requires_root_init:
             root_init = load_root_init_sequence(self.root_init_dir, self.split, seq_name)
             root_shape = np.asarray(payload["Y_root_cam_gt"]).shape
             if root_init.shape != root_shape:
@@ -320,7 +323,7 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
         _nan_to_num_inplace(root_gt)
 
         root_init = None
-        if self.prediction_mode == "delta":
+        if self.requires_root_init:
             root_init = np.asarray(payload["root_init_norm"][person_idx, frame_idx], dtype=np.float32)
             _nan_to_num_inplace(root_init)
 
@@ -370,6 +373,11 @@ class NormalizedFrameDataset(Dataset[Dict[str, Any]]):
             ground = np.asarray(payload["ground_intersection"][person_idx, frame_idx], dtype=np.float32)  # (3,)
             _nan_to_num_inplace(ground)
             parts.append(ground.reshape(-1))
+
+        if self.input_config.use_root_init_as_input:
+            if root_init is None:
+                raise RuntimeError("root_init input was requested but no normalized root init was loaded")
+            parts.append(root_init.reshape(-1))
 
         if self.input_config.use_valid_joints_as_input:
             parts.append(valid_joints_np.astype(np.float32).reshape(-1))

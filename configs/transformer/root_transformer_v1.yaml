@@ -1,22 +1,22 @@
-run_name: root_transformer_v1_delta_new_root_init
+run_name: root_transformer_v1_delta_new_root_init_wo_vj_gi_pp_k
 seed: 123
 device: auto
 prediction_mode: delta  # absolute | delta ; delta => root_pred_norm = root_init_norm + delta_pred_norm
 root_init_dir: auto         # auto -> data/root_init_cam_normalized
-data_dir: auto
+data_dir: data/features_normalized_wo_k  # ex: data/features_normalized_wo_k
 output_dir: outputs
 
 input_config:
   use_x3d_sam_rel: true
   use_x2d_img: true
   use_x2d_box: true
-  use_pitch_points_2d: true # 50 points terrain projetes + masque de visibilite
+  use_pitch_points_2d: false # 50 points terrain projetes + masque de visibilite
   use_bbox_feat: true
   bbox_clean_or_noisy: clean
   use_cam_feat: true
   cam_feat_type: boosted_clean
-  use_ground_intersection: true
-  use_valid_joints_as_input: true
+  use_ground_intersection: false
+  use_valid_joints_as_input: false
 
 dataset:
   max_sequences: null
@@ -78,7 +78,6 @@ eval:
 plots:
   enabled: true
   split_for_plots: valid
-  root_error_ground_vs_air_histogram: true
   seq_name: null
   person_idx: null
   num_frames_overlay: 6

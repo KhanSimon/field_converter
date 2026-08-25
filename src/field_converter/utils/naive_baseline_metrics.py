@@ -28,6 +28,7 @@ import torch
 from field_converter.data_preparation.features_creation import FeatureCreator
 from field_converter.data_preparation.generate_root_init import compute_root_init_cam
 from field_converter.data_preparation.normalize_root_init import normalize_one
+from field_converter.data_preparation.normalize import NormalizationStats
 from field_converter.evaluation.temporal_evaluator import TemporalEvaluator
 from field_converter.training.config import InputConfig
 from field_converter.training.filters import filter_valid_mask_bbox_geometry, filter_valid_mask_in_image
@@ -212,9 +213,10 @@ def _generate_corrected_root_init(
     raw_features_dir: Path,
     out_dir: Path,
     stats: TorchNormalizationStats,
+    pelvis_mode: str,
 ) -> None:
     """Recompute the corrected baseline without trusting existing root-init files."""
-    creator = FeatureCreator(data_dir=raw_features_dir.parent)
+    creator = FeatureCreator(data_dir=raw_features_dir.parent, pelvis_mode=pelvis_mode)  # type: ignore[arg-type]
     split_out_dir = out_dir / split
     split_out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -385,6 +387,7 @@ def main() -> None:
         raise ValueError("--max-sequences must be > 0")
 
     stats = TorchNormalizationStats.load(cfg.normalization_stats_path, device="cpu")
+    normalization_stats = NormalizationStats.load(cfg.normalization_stats_path)
     evaluator = TemporalEvaluator(
         stats=stats,
         device=device,
@@ -405,6 +408,7 @@ def main() -> None:
                 raw_features_dir=raw_features_dir,
                 out_dir=corrected_root_init_dir,
                 stats=stats,
+                pelvis_mode=normalization_stats.pelvis_mode,
             )
             loader = _make_loader(
                 cfg=cfg,

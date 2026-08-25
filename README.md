@@ -62,7 +62,7 @@ PYTHONPATH=src python -m field_converter.training.compare_root_models \
 - `src/field_converter/training/config.py`:
   - dataclasses typées: `RunConfig`, `InputConfig`, `DatasetConfig`, `ModelConfig`, `OptimizerConfig`, `TrainingConfig`, `LossWeights`, `EvalConfig`, `PlotsConfig`
   - loader `load_run_config(path)` (YAML/JSON)
-  - `data_dir: auto` -> `field_converter.pathseeker.DATA_DIR / "features_normalized"`
+  - `data_dir` choisit le dossier normalisé du run ; les YAML utilisent par défaut `data/features_normalized`
   - chemins dérivés:
     - `outputs/checkpoints/<run_name>/...`
     - `outputs/predictions/<run_name>/...`
@@ -241,7 +241,7 @@ Des wrappers existent aussi dans `scripts/` (mêmes arguments) et délèguent au
 ## Format des données attendues (features_normalized)
 
 ### Chemin
-Par défaut, `data_dir: auto` pointe vers:
+Par défaut, les YAML définissent `data_dir: data/features_normalized` :
 
 ```text
 data/features_normalized/
@@ -320,7 +320,7 @@ Les fichiers dans config contrôlent tout le pipeline.
 - `prediction_mode`: `absolute | delta`
   - `absolute`: le modèle sort directement `root_pred_norm`
   - `delta`: le modèle sort `delta_pred_norm`, puis `root_pred_norm = root_init_norm + delta_pred_norm`
-- `data_dir`: `auto` ou chemin vers `data/features_normalized`
+- `data_dir`: dossier de features normalisées utilisé pour le training, par défaut `data/features_normalized`
 - `root_init_dir`: `auto` ou chemin vers `data/root_init_cam_normalized` (requis en mode `delta`)
 - `output_dir`: par défaut `outputs/` à la racine du repo
 
@@ -366,6 +366,14 @@ Dans `outputs/`:
   - contient: meta (seq/person/frame), root préd/gt en normalisé & mètres, root monde, erreur root, metrics JSON sérialisées
   - en mode `delta`, contient aussi `root_delta_pred_norm` et `root_init_norm`
 - `eval_reports/<run_name>/plots/*.png` (si `plots.enabled: true`)
+
+### Inférence qualitative sans GT
+
+Le pipeline MLP/TCN/Transformer pour `data/data_inference` se lance avec
+`scripts/inference/run_inference.sh`. Les résultats denses sont écrits dans
+`outputs/predictions/inference/<run_name>/<sequence>/`. Voir
+`scripts/inference/README.md` pour le format des entrées, les arguments et les
+clés exportées.
 
 ### Baseline
 La baseline écrit dans:

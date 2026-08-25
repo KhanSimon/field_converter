@@ -84,6 +84,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         if self.prediction_mode not in {"absolute", "delta"}:
             raise ValueError(f"prediction_mode must be 'absolute' or 'delta' (got {self.prediction_mode!r})")
         self.root_init_dir = Path(root_init_dir) if root_init_dir is not None else default_root_init_dir(self.data_dir)
+        self.requires_root_init = self.prediction_mode == "delta" or self.input_config.use_root_init_as_input
 
         self.window_size = int(window_size)
         self.stride = int(stride)
@@ -305,7 +306,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             for k in sorted(self._payload_keys_required):
                 payload[k] = npz[k]
 
-        if self.prediction_mode == "delta":
+        if self.requires_root_init:
             root_init = load_root_init_sequence(self.root_init_dir, self.split, seq_name)
             root_shape = np.asarray(payload["Y_root_cam_gt"]).shape
             if root_init.shape != root_shape:
@@ -408,7 +409,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
             root_gt = np.asarray(payload["Y_root_cam_gt"][person_idx, frames_fetch], dtype=np.float32)  # (W,3)
             _nan_to_num_inplace(root_gt)
-            if self.prediction_mode == "delta":
+            if self.requires_root_init:
                 root_init = np.asarray(payload["root_init_norm"][person_idx, frames_fetch], dtype=np.float32)
                 _nan_to_num_inplace(root_init)
 
@@ -432,7 +433,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
                 root_gt = root_gt.copy()
                 root_gt[~in_bounds] = 0.0
-                if self.prediction_mode == "delta":
+                if self.requires_root_init:
                     root_init = root_init.copy()
                     root_init[~in_bounds] = 0.0
 
@@ -468,7 +469,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
 
                 root_gt[:T] = np.asarray(payload["Y_root_cam_gt"][person_idx, :T], dtype=np.float32)
                 _nan_to_num_inplace(root_gt[:T])
-                if self.prediction_mode == "delta":
+                if self.requires_root_init:
                     root_init[:T] = np.asarray(payload["root_init_norm"][person_idx, :T], dtype=np.float32)
                     _nan_to_num_inplace(root_init[:T])
 
@@ -500,7 +501,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
         if invalid_frame_mask.any():
             x3d_sam = _zero_invalid_frames(x3d_sam)
             root_gt = _zero_invalid_frames(root_gt)
-            if self.prediction_mode == "delta":
+            if self.requires_root_init:
                 root_init = _zero_invalid_frames(root_init)
             Y_cam_gt = _zero_invalid_frames(Y_cam_gt)
             Y_2d_gt = _zero_invalid_frames(Y_2d_gt)
@@ -624,6 +625,9 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             ground = _zero_invalid_frames(ground)
             parts.append(ground.reshape(self.window_size, -1))
 
+        if self.input_config.use_root_init_as_input:
+            parts.append(root_init.reshape(self.window_size, -1))
+
         if self.input_config.use_valid_joints_as_input:
             parts.append(valid_joints.astype(np.float32).reshape(self.window_size, -1))
 
@@ -650,7 +654,7 @@ class NormalizedWindowDataset(Dataset[Dict[str, Any]]):
             "frame_start": frame_start,
             "frame_indices": torch.from_numpy(frame_indices.astype(np.int64)),
         }
-        if self.prediction_mode == "delta":
+        if self.requires_root_init:
             sample["root_init_norm"] = torch.from_numpy(root_init)
 
         return sample

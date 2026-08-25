@@ -108,3 +108,7 @@ if __name__ == "__main__":
     )
 
 # PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/root_transformer_v1_delta_new_root_init/valid_predictions.npz ARG_FRA_203048.npy --sequence ARG_FRA_203048
+
+# PYTHONPATH=src python -m field_converter.utils.convert_to_vizu_template outputs/predictions/inference/root_transformer_v1_delta_new_root_init_wo_vj_gi_pp_k/ekstraklasa_001999/predictions.npz ARG_FRA_203048.npy --sequence ARG_FRA_203048
+
+

@@ -1,6 +1,6 @@
 # Root translation refinement — V1 (frame-wise MLP)
 # Notes:
-# - `data_dir: auto` -> ps.DATA_DIR / "features_normalized"
+# - choisir ici le dossier normalisé utilisé pour le training
 # - outputs go to `output_dir/<subfolders>/<run_name>/...`
 
 run_name: root_mlp_v1_debug_test2
@@ -11,7 +11,7 @@ device: auto  # auto | cpu | cuda
 prediction_mode: absolute  # absolute | delta ; delta => root_pred_norm = root_init_norm + delta_pred_norm
 root_init_dir: auto         # auto -> data/root_init_cam_normalized
 
-data_dir: auto
+data_dir: data/features_normalized  # ex: data/features_normalized_wo_k
 output_dir: outputs
 
 input_config:

@@ -87,6 +87,7 @@ class InputConfig:
     use_cam_feat: bool = True
     cam_feat_type: CamFeatTypeStr = "boosted_clean"
     use_ground_intersection: bool = False
+    use_root_init_as_input: bool = False
     use_valid_joints_as_input: bool = True
 
     def validate(self) -> None:
@@ -107,6 +108,7 @@ class InputConfig:
             or self.use_bbox_feat
             or self.use_cam_feat
             or self.use_ground_intersection
+            or self.use_root_init_as_input
             or self.use_valid_joints_as_input
         ):
             raise ValueError("At least one input source must be enabled")
@@ -310,6 +312,7 @@ def load_run_config(config_path: Path | str) -> RunConfig:
         use_cam_feat=bool(input_cfg_raw.get("use_cam_feat", True)),
         cam_feat_type=str(input_cfg_raw.get("cam_feat_type", "boosted_clean")),  # type: ignore[arg-type]
         use_ground_intersection=bool(input_cfg_raw.get("use_ground_intersection", False)),
+        use_root_init_as_input=bool(input_cfg_raw.get("use_root_init_as_input", False)),
         use_valid_joints_as_input=bool(input_cfg_raw.get("use_valid_joints_as_input", True)),
     )
 
