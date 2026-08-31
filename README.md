@@ -101,7 +101,7 @@ python -c "import torch, field_converter; print(torch.__version__); print('CUDA:
 
 ## Data
 
-The training data and broadcast videos are not distributed with this repository. Users must obtain the dataset separately and comply with its access and usage conditions. See [`data/README.md`](data/README.md) and the [FIFA Skeletal Tracking Starter Kit](https://github.com/FIFA-Skeletal-Light-Tracking-Challenge/FIFA-Skeletal-Tracking-Starter-Kit-2026) for the expected data organization.
+The training data and broadcast videos are not distributed with this repository. Users must obtain the dataset separately and comply with its access and usage conditions. See the [FIFA Skeletal Tracking Starter Kit](https://github.com/FIFA-Skeletal-Light-Tracking-Challenge/FIFA-Skeletal-Tracking-Starter-Kit-2026) for the expected data organization.
 
 Training assumes that the consolidated features, normalization statistics, split definition, and geometry-based root initialization have already been prepared:
 
@@ -277,10 +277,3 @@ field_converter/
 - Both temporal models are non-causal and use future as well as past context; they are intended for offline processing.
 - Accuracy may degrade for camera placements, field conventions, or image statistics outside the training distribution.
 
-## Citation
-
-Citation metadata will be added when available.
-
-## Acknowledgments
-
-This project uses relative player-pose estimates produced with [SAM 3D Body](https://github.com/facebookresearch/sam-3d-body). Users should follow the original model's access, licensing, and citation requirements. Dataset access and organization follow the FIFA Skeletal Tracking resources described in [`data/README.md`](data/README.md).
