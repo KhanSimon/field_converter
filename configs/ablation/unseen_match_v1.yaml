@@ -43,6 +43,7 @@ design:
   include_absolute_with_root_init: true
   include_temporal_controls: true
   include_mlp: true
+  include_mlp_absolute: true
 
   # Swap the context lengths to distinguish architecture from temporal context.
   temporal_windows:
@@ -79,3 +80,13 @@ statistics:
   bootstrap_samples: 2000
   bootstrap_seed: 314159
   confidence_level: 0.95
+
+# Freeze the runs used by every publication figure and table. These are
+# intentionally explicit: generating the package must not silently change the
+# reported reference when another run finishes.
+publication:
+  reference_runs:
+    primary:
+      mlp: primary_mlp_full_s1235
+      tcn: primary_tcn_full_s2027
+      transformer: primary_transformer_window_41_s1235

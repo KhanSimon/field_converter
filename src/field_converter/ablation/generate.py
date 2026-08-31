@@ -319,6 +319,22 @@ def generate_campaign(manifest_path: str | Path) -> dict[str, Any]:
                 run_mean_baseline=architecture == "transformer",
             )
 
+    # Append optional follow-up runs so enabling one does not renumber the
+    # original 25-task campaign or invalidate historical Slurm array indices.
+    if bool(design.get("include_mlp_absolute", False)):
+        if not bool(design.get("include_mlp", True)):
+            raise ValueError("design.include_mlp_absolute requires design.include_mlp")
+        add_run(
+            "mlp",
+            primary_fold,
+            base_seed,
+            "formulation",
+            "absolute",
+            "MLP absolute",
+            prediction_mode="absolute",
+            input_updates={"use_root_init_as_input": False},
+        )
+
     expected_gpu_hours = len(runs) * expected_hours_per_run
     max_runs = int(design.get("max_runs", 26))
     max_gpu_hours = float(design.get("max_gpu_hours", 120.0))

@@ -181,3 +181,54 @@ Root-error confidence intervals use a sequence-cluster bootstrap. Ablation
 effects additionally use paired bootstrap differences whenever sequence,
 player, and frame identifiers match. Positive effect values mean that the
 ablation is worse than the full reference.
+
+## Publication diagnostics
+
+Generate the English publication figures and LaTeX/CSV tables from every run
+that is complete at submission time:
+
+```bash
+sbatch scripts/ablation/generate_publication_figures.sh
+```
+
+No command-line argument is required. Edit the analysis settings near the top
+of `generate_publication_figures.sh`. The default output is:
+
+```text
+outputs/ablation/unseen_match_v1/publication/
+```
+
+It contains 300-dpi PNG and vector PDF figures, per-figure CSV data, aligned
+per-frame diagnostics, and `booktabs`-compatible tables. Confidence intervals
+are computed by resampling complete test clips, not individual frames. The job
+can be run on a partial campaign and resubmitted after more array tasks finish;
+the publication references are explicitly frozen under `publication.reference_runs`
+in the campaign manifest.
+
+## Best-candidate runs
+
+Train and evaluate the strongest combined input candidates with:
+
+```bash
+sbatch scripts/ablation/train_best_root_candidates.sh
+```
+
+This submits a sequential two-task array: task 0 is the 201-frame TCN and task
+1 is the 41-frame Transformer. Both retain relative SAM3D pose, player 2D/bbox
+cues, and camera features, while disabling pitch points, the direct ground
+intersection feature, and the joint-validity mask. All settings, including the
+resume/force switches, are configured near the top of the shell script. Once a
+candidate is complete, it remains available in the campaign results but does not
+silently replace one of the frozen publication references.
+
+## Absolute MLP follow-up
+
+The original campaign generated absolute-root runs only for the TCN and
+Transformer. Submit the matching frame-wise MLP run with:
+
+```bash
+sbatch scripts/ablation/train_mlp_absolute.sh
+```
+
+The script takes no arguments. It appends `primary_mlp_absolute_s1235` as run
+index 25, then trains and evaluates only that run on the same primary split.

@@ -20,3 +20,6 @@ __pycache__/
 .pytest_cache
 .mypy_cache
 .cache/matplotlib
+
+
+README_oldversion.md

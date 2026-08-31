@@ -1,403 +1,286 @@
-# V1 — Root translation refinement (frame-wise MLP)
+<h1 align="center">Field Converter: Geometry-Initialized Temporal Residual Refinement for World-Grounded Player Pose Estimation from Soccer Broadcasts</h1>
 
-## Objectif
-Implémentation d’une baseline **propre, reproductible et minimaliste** pour affiner la translation du root en caméra.
+<p align="center">
+  Simon Khan<sup>1,2</sup> &nbsp;&middot;&nbsp;
+  Laurent Gajny<sup>1</sup> &nbsp;&middot;&nbsp;
+  Jennyfer Lecompte<sup>2</sup> &nbsp;&middot;&nbsp;
+  Sébastien Laporte<sup>1</sup>
+</p>
 
-## Contraintes V1 (volontairement simples)
-- Modèle: **MLP frame-wise** (pas de temporel)
-- Entrée: concaténation de features **par frame** (3D SAM relatives, bbox feat, cam feat, valid_joints…)
-- Sortie: uniquement `root_cam_norm_pred` de forme `(B,3)` en **espace normalisé**
-- Entraînement: régression `SmoothL1(root_pred_norm, root_gt_norm)` (+ pertes optionnelles désactivées par défaut)
-- Évaluation: reconstruction 3D caméra + reprojection 2D pour métriques/plots
+<p align="center">
+  <sup>1</sup>Institut de Biomécanique Humaine Georges Charpak (IBHGC), Arts et Métiers ParisTech, Paris, France<br>
+  <sup>2</sup>French Football Federation (FFF), Clairefontaine-en-Yvelines, France
+</p>
 
-## Quickstart
-Pré-requis: exécuter dans un environnement Python avec **PyTorch** (et NumPy, PyYAML, matplotlib, tqdm).
+<p align="center">
+  <img src="assets/teaser.png" alt="Broadcast actions, camera-relative player poses, and their reconstruction in a common metric field coordinate system.">
+</p>
 
-Train (config debug par défaut):
+<p align="center"><em>
+From monocular broadcast video to world-grounded 3D player pose. Left: three actions observed in the broadcast and their corresponding camera-relative, self-centered 3D poses. Right: the same reconstructed poses localized in a common metric field coordinate system, where their positions can be directly related to the pitch and to one another.
+</em></p>
+
+## Overview
+
+Field Converter localizes camera-relative 3D player poses in a shared, metric soccer-field coordinate system. Given synchronized player tracks, calibrated cameras, image-space keypoints, and self-centered 3D poses, it first obtains a geometry-based estimate of each player's root translation. A non-causal temporal model then predicts a residual correction before the relative skeleton is reconstructed in camera coordinates and transformed into the world frame.
+
+This repository provides the two best temporal variants:
+
+- **Field Converter-TCN**: a 41-frame temporal convolutional network with approximately 1.28 million parameters;
+- **Field Converter-Transformer**: a 41-frame Transformer encoder with approximately 1.25 million parameters.
+
+Both models operate at **50 FPS**. Field Converter implements the geometry and temporal localization stage; it does not detect players, estimate camera calibration, or infer a relative pose directly from raw video. Relative 2D and 3D player poses can be obtained with [SAM 3D Body](https://github.com/facebookresearch/sam-3d-body).
+
+## Method
+
+<p align="center">
+  <img src="assets/pipeline.png" alt="Field Converter geometry initialization, temporal residual refinement, and camera-to-world reconstruction pipeline.">
+</p>
+
+<p align="center"><em>
+Proposed Field Converter method. First, a geometry-based initialization estimates the player root from the calibrated camera, the relative 3D pose, and a ray-ground intersection. Second, a temporal model predicts a residual correction using pose, image, camera, and geometric cues. Finally, the refined root anchors the relative skeleton in camera coordinates before transformation to the common world coordinate system.
+</em></p>
+
+For each player and frame, the initialization intersects the camera ray passing through the lowest valid keypoint with the pitch plane. The temporal network receives pose, bounding-box, camera, projected-pitch, and geometric features and estimates a normalized root residual. Overlapping temporal windows are averaged to produce dense predictions.
+
+The portable model configurations are:
+
+- [`configs/paper/field_converter_tcn.yaml`](configs/paper/field_converter_tcn.yaml)
+- [`configs/paper/field_converter_transformer.yaml`](configs/paper/field_converter_transformer.yaml)
+
+## Results
+
+The table reports mean errors on the held-out `ENG_FRA` match, comprising 15 broadcast sequences. Lower is better.
+
+| Method | Temporal window | Root Error (cm) ↓ | Global MPJPE (cm) ↓ | Reprojection Error (px) ↓ |
+|---|---:|---:|---:|---:|
+| Geometry initialization | – | 48.58 | 48.36 | 5.39 |
+| **Field Converter-TCN** | 41 frames | **10.12** | **13.20** | 3.49 |
+| **Field Converter-Transformer** | 41 frames | 11.04 | 13.21 | **3.43** |
+
+Global MPJPE is evaluated after transforming the reconstructed skeletons into the common world coordinate system. Reprojection error is measured in image pixels.
+
+## Getting Started
+
+### Tested environment
+
+The code was tested with:
+
+- Linux;
+- Python 3.11.15;
+- PyTorch 2.6.0;
+- CUDA 12.4;
+- NumPy 2.4.4.
+
+Experiments were run on a single NVIDIA L40S GPU with 48 GB of VRAM.
+
+### Installation
+
+Clone the repository and create the tested environment:
+
 ```bash
-PYTHONPATH=src python -m field_converter.training.train_root_mlp --config configs/mlp/root_mlp_v1.yaml
+git clone https://github.com/KhanSimon/field_converter.git
+cd field_converter
+
+conda create -n field-converter python=3.11 -y
+conda activate field-converter
 ```
 
-Évaluer (métriques + prédictions + plots):
+Install the CUDA 12.4 build of PyTorch, then install Field Converter in editable mode:
+
 ```bash
-PYTHONPATH=src python -m field_converter.training.evaluate_root_mlp --config configs/mlp/root_mlp_v1.yaml --checkpoint best
+python -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -e .
 ```
 
-Baseline + comparaison (mean-root):
+Check the installation:
+
 ```bash
-PYTHONPATH=src python -m field_converter.training.compare_baseline_root --config configs/mlp/root_mlp_v1.yaml
+python -c "import torch, field_converter; print(torch.__version__); print('CUDA:', torch.cuda.is_available())"
 ```
 
+## Data
 
-# V1 — Root translation refinement (temporal TCN)
+The training data and broadcast videos are not distributed with this repository. Users must obtain the dataset separately and comply with its access and usage conditions. See [`data/README.md`](data/README.md) and the [FIFA Skeletal Tracking Starter Kit](https://github.com/FIFA-Skeletal-Light-Tracking-Challenge/FIFA-Skeletal-Tracking-Starter-Kit-2026) for the expected data organization.
 
-## Objectif
-Version temporelle (fenêtres overlapées + agrégation par frame) qui prédit `root_cam_norm_pred` de forme `(B,T,3)`.
-
-## Quickstart
-Train:
-```bash
-PYTHONPATH=src python -m field_converter.training.train_root_tcn --config configs/tcn/root_tcn_v1.yaml
-```
-
-Évaluer (métriques + prédictions + plots):
-```bash
-PYTHONPATH=src python -m field_converter.training.evaluate_root_tcn --config configs/tcn/root_tcn_v1.yaml --checkpoint best
-```
-
-Comparer Baseline vs MLP vs TCN (barplot):
-```bash
-PYTHONPATH=src python -m field_converter.training.compare_root_models \
-  --mlp_config configs/mlp/root_mlp_v1_train.yaml \
-  --tcn_config configs/tcn/root_tcn_v1.yaml \
-  --split valid
-```
-
-
-## Structure du code (ce qui a été ajouté)
-
-### Config
-- `configs/mlp/root_mlp_v1_train.yaml`: config V1 (train)
-- `configs/mlp/root_mlp_v1_debug.yaml`: config V1 (debug)
-- `src/field_converter/training/config.py`:
-  - dataclasses typées: `RunConfig`, `InputConfig`, `DatasetConfig`, `ModelConfig`, `OptimizerConfig`, `TrainingConfig`, `LossWeights`, `EvalConfig`, `PlotsConfig`
-  - loader `load_run_config(path)` (YAML/JSON)
-  - `data_dir` choisit le dossier normalisé du run ; les YAML utilisent par défaut `data/features_normalized`
-  - chemins dérivés:
-    - `outputs/checkpoints/<run_name>/...`
-    - `outputs/predictions/<run_name>/...`
-    - `outputs/eval_reports/<run_name>/...`
-
-### Dataset
-- `src/field_converter/training/dataset.py`:
-  - `NormalizedFrameDataset`: Dataset PyTorch **frame-wise**
-  - indexation de tous les `(person_idx, frame_idx)` où `valid_mask=True`
-  - cache simple par séquence (évite de recharger le `.npz` à chaque sample)
-  - optimisation mémoire: le cache ne charge plus tout le `.npz` mais uniquement les clés nécessaires selon `InputConfig`
-  - `infer_input_dim(cfg)` pour dimensionner le MLP
-
-### Performance (DataLoader / BeeGFS)
-Sur des fichiers `.npz` par séquence (souvent compressés) et un filesystem réseau (ex: BeeGFS), un `shuffle=True` naïf peut provoquer beaucoup d'accès aléatoires et de décompression, ce qui ralentit fortement l'entraînement (GPU idle) et peut augmenter la RAM par worker. Pour limiter ça:
-- le `DataLoader` utilise un `prefetch_factor` réduit quand `num_workers>0`
-- option `training.group_batches_by_sequence: true`: les batches sont groupés par séquence (sampler dédié) pour maximiser la localité et profiter du cache par séquence
-- le calcul de pertes optionnelles est court-circuité quand leurs poids sont à 0 (ex: `cam3d=0`, `proj=0`)
-
-### Modèle
-- `src/field_converter/models/mlp.py`:
-  - MLP générique: séquence `Linear -> Activation -> Dropout` répétée, puis `Linear` de sortie
-  - activations supportées: `relu`, `gelu`
-- `src/field_converter/models/root_refiner.py`:
-  - `RootRefiner`: wrapper `nn.Module` autour du MLP, sortie `(B,3)`
-
-### Normalisation / dénormalisation
-- `src/field_converter/utils/normalization.py`:
-  - `TorchNormalizationStats.load(data_dir/normalization_stats.npz)`
-  - helpers:
-    - `denorm_root(root_norm) = root_norm * std_root + mean_root`
-    - `denorm_sam3d_rel(X_norm) = X_norm * std_sam3d_rel + mean_sam3d_rel`
-
-### Utils
-- `src/field_converter/utils/torch_utils.py`:
-  - `seed_everything(seed)` (python/numpy/torch)
-  - `get_device(auto|cpu|cuda)`
-- `src/field_converter/utils/io.py`:
-  - `ensure_dir(path)`
-  - `write_json(path, payload)`
-
-### Géométrie
-- `src/field_converter/geometry/transforms.py`:
-  - conventions **row-vector**:
-    - `X_cam = X_world @ R.T + t`
-    - `X_world = (X_cam - t) @ R`
-- `src/field_converter/geometry/projection.py`:
-  - projection caméra -> image avec distorsion radiale `(k1,k2)`:
-    - `x = X/Z`, `y = Y/Z`, `r2=x^2+y^2`, `factor=1+k1*r2+k2*r2^2`
-    - `u=fx*x_d+cx`, `v=fy*y_d+cy`
-
-### Losses
-- `src/field_converter/losses/root_losses.py`:
-  - `loss_root_smooth_l1(root_pred_norm, root_gt_norm)` (V1)
-  - `reconstruct_X_cam_pred(x3d_sam_norm, root_pred_norm, stats)`:
-    - dénormalise `X_rel` et `root`, puis `X_cam_pred = X_rel + root[:,None,:]`
-  - `loss_cam3d(...)` optionnelle (masquée par `valid_joints`)
-- `src/field_converter/losses/projection_losses.py`:
-  - `loss_reprojection(...)` optionnelle en pixels (masquée)
-- `src/field_converter/losses/temporal_losses.py`:
-  - pertes temporelles masquées (utilisées en TCN)
-
-#### $L_{root}$
-
-Perte Smooth L1 entre $root\_pred\_norm$ et $root\_gt\_norm$ (réduction moyenne).
-
-La fonction Smooth L1 (Huber variant) pour un résidu scalaire :
-
-$$
-r = pred - gt
-$$
-
-$$
-\ell_{smoothL1}(r) =
-\begin{cases}
-0.5r^2 & \text{si } |r| < 1 \\
-|r| - 0.5 & \text{sinon}
-\end{cases}
-$$
-
-La perte globale est :
-
-$$
-L_{root} = \operatorname{mean}_{batch}\Big(\ell_{smoothL1}(\text{each coord})\Big)
-$$
-
-#### $L_{cam3d}$
-
-Perte 3D caméra entre $X_{cam}^{pred}$ et $Y_{cam}^{gt}$.
-
-On reconstruit d'abord :
-
-$$
-X_{cam}^{pred} =
-\operatorname{denorm\_sam3d}(x3d\_sam\_norm)
-+
-\operatorname{denorm\_root}(root\_pred\_norm)
-$$
-
-Puis on applique une perte Smooth L1 (ou L1) par coordonnée,
-moyennée par joint, avec réduction masquée :
-
-$$
-L_{cam3d}=
-\frac{
-\sum_{b,j} mask_{b,j}
-\; \ell_{joint}
-\left(
-X_{b,j}^{pred},
-Y_{b,j}^{gt}
-\right)
-}{
-\sum_{b,j} mask_{b,j}
-}
-$$
-
-#### $L_{proj}$
-
-Même principe pour la 2d reprojetée en pixels. 
-
-### Métriques / évaluation
-- `src/field_converter/evaluation/metrics.py`:
-  - `MetricsAccumulator`: accumule des métriques en unités dénormalisées
-  - métriques produites:
-    - `root_error_mean_m`, `root_error_median_m`, `root_error_p90_m`
-    - `root_error_x_m`, `root_error_y_m`, `root_error_z_m` (erreur abs moyenne par axe)
-    - `MPJPE_cam_m`, `MPJPE_world_m` (coordonnées globales, masqué `valid_joints`)
-    - `MPJPE_local_m` (pelvis de chaque joueur comme origine, sans alignement en rotation/scale)
-    - `reprojection_error_mean_px`, `reprojection_error_median_px` (masqué)
-- `src/field_converter/evaluation/evaluator.py`:
-  - `Evaluator.evaluate_split(model, dataloader, out_dir, split_name)`
-  - sauvegarde optionnelle:
-    - `outputs/predictions/<run_name>/<split>_predictions.npz`
-    - `outputs/predictions/<run_name>/<split>_predictions.csv` (désactivé par défaut)
-  - si `model` est un `nn.Module`: `.to(device)` + `.eval()` automatiquement
-
-### Baseline
-- `src/field_converter/evaluation/baseline.py`:
-  - baseline A: `MeanRootBaseline(mean_root_norm)` (constante en normalisé)
-  - `compute_mean_root_norm(train_dl, device)` calcule la moyenne du `root_gt` normalisé
-
-### Plots
-- `src/field_converter/evaluation/visualization.py` (backend matplotlib `Agg`):
-  - `training_curves.png`: losses train/valid + root error valid
-  - `root_xyz_timeseries_<split>.png`: GT vs Pred des 3 composantes root
-  - `world_traj_xy_<split>.png`: trajectoire monde XY (root)
-  - `reproj_overlay_<split>.png`: overlay 2D (GT 2D vs SAM 2D vs reprojection prédite)
-  - `model_vs_baseline_<split>.png`: barplot comparatif (root error / MPJPE)
-
-### Entraînement
-- `src/field_converter/training/trainer.py`:
-  - loop AdamW + gradient clipping optionnel
-  - early stopping sur `root_error_mean_m` en validation
-  - checkpoints:
-    - `best.pt` (meilleur `root_error_mean_m`)
-    - `last.pt`
-  - log CSV: `outputs/eval_reports/<run_name>/train_log.csv`
-
-### Entrypoints
-Les entrypoints “officiels” sont des modules (plus robustes car `scripts/` est souvent ignoré côté git):
-- `python -m field_converter.training.train_root_mlp`
-- `python -m field_converter.training.evaluate_root_mlp`
-- `python -m field_converter.training.train_root_tcn`
-- `python -m field_converter.training.evaluate_root_tcn`
-- `python -m field_converter.training.compare_root_models`
-- `python -m field_converter.training.compare_baseline_root`
-
-Ils correspondent à:
-- `src/field_converter/training/train_root_mlp.py`
-- `src/field_converter/training/evaluate_root_mlp.py`
-- `src/field_converter/training/compare_baseline_root.py`
-
-Des wrappers existent aussi dans `scripts/` (mêmes arguments) et délèguent aux modules.
-
-
-## Format des données attendues (features_normalized)
-
-### Chemin
-Par défaut, les YAML définissent `data_dir: data/features_normalized` :
+Training assumes that the consolidated features, normalization statistics, split definition, and geometry-based root initialization have already been prepared:
 
 ```text
-data/features_normalized/
-  normalization_stats.npz
-  split.json
-  train/<sequence>.npz
-  valid/<sequence>.npz
-  test/<sequence>.npz
+data/
+├── features_normalized/
+│   ├── normalization_stats.npz
+│   ├── split.json
+│   ├── train/<sequence>.npz
+│   ├── valid/<sequence>.npz
+│   └── test/<sequence>.npz
+├── root_init_cam_normalized/
+│   ├── train/<sequence>.npy
+│   ├── valid/<sequence>.npy
+│   └── test/<sequence>.npy
+└── pitch_points.txt
 ```
 
-Pour le mode delta, `root_init_dir: auto` pointe vers:
+The supplied model configurations use these default paths. Change `data_dir` and `root_init_dir` in the YAML files if the prepared data are stored elsewhere.
+
+## Training
+
+Train the TCN:
+
+```bash
+python -m field_converter.training.train_root_tcn \
+  --config configs/paper/field_converter_tcn.yaml
+```
+
+Train the Transformer:
+
+```bash
+python -m field_converter.training.train_root_transformer \
+  --config configs/paper/field_converter_transformer.yaml
+```
+
+Each run saves the following artifacts:
 
 ```text
-data/root_init_cam_normalized/
-  split.json
-  train/<sequence>.npy
-  valid/<sequence>.npy
-  test/<sequence>.npy
+outputs/
+├── checkpoints/<run_name>/
+│   ├── best.pt
+│   └── last.pt
+└── eval_reports/<run_name>/
+    ├── config_used.yaml
+    ├── train_log.csv
+    └── train_summary.json
 ```
 
-Ces fichiers se génèrent en deux étapes:
+Evaluate the best checkpoints:
 
 ```bash
-PYTHONPATH=src python -m field_converter.data_preparation.generate_root_init --features-dirname features --overwrite
-PYTHONPATH=src python -m field_converter.data_preparation.normalize_root_init --features-normalized-dirname features_normalized --overwrite
+python -m field_converter.training.evaluate_root_tcn \
+  --config configs/paper/field_converter_tcn.yaml \
+  --checkpoint best
+
+python -m field_converter.training.evaluate_root_transformer \
+  --config configs/paper/field_converter_transformer.yaml \
+  --checkpoint best
 ```
 
-### Fichiers `.npz` par séquence
-Le dataset V1 lit (au minimum) les clés suivantes, avec des shapes typiques:
+Metrics are written to `outputs/eval_reports/<run_name>/metrics.json`, and dense predictions are saved under `outputs/predictions/<run_name>/`.
 
-- `valid_mask`: `(P,T)` bool (indique quelles frames sont valides)
-- `valid_joints`: `(P,T,25)` bool
-- `skel_3d_sam3dbody_from_bbox_gt`: `(P,T,25,3)` **normalisé** (joints relatifs)
-- `Y_root_cam_gt`: `(P,T,3)` **normalisé** (root caméra GT)
-- `pitch_points_2d`: `(T,50,2)` **normalisé** par `(W,H)`; les points hors image valent zéro
-- `valid_pitch_points`: `(T,50)` bool, masque des points terrain visibles
+## Inference
 
-- `K`: `(T,3,3)` float32
-- `R`: `(T,3,3)` float32
-- `t`: `(T,3)` float32
-- `k`: `(T,2)` float32 (distorsion radiale)
+> Pretrained TCN and Transformer weights will be available on Hugging Face soon. A release bundle must pair each checkpoint with its exact YAML configuration and training normalization statistics; a `.pt` file alone is not sufficient.
 
-- `Y_cam_gt`: `(P,T,25,3)` float32 (mètres)
-- `Y_2d_gt`: `(P,T,25,2)` float32 (pixels)
+### Required inputs
 
-Les features terrain se régénèrent avec le pipeline habituel :
+Inference expects synchronized inputs sampled at **50 FPS**. It starts from calibrated, precomputed player observations rather than a raw broadcast video.
+
+```text
+data/data_inference/
+├── boxes/<sequence>.npy
+├── cameras/<sequence>.npz
+├── skel_2d/<sequence>.npy
+├── skel_3d_relative/<sequence>.npy
+└── frames/<sequence>/*.jpg        # optional; used only for source frame numbers
+```
+
+For a sequence with `T` frames and `N` tracked players:
+
+| Input | Expected shape | Description |
+|---|---|---|
+| `boxes/<sequence>.npy` | `(T, N, 4)` or `(N, T, 4)` | Player boxes in pixel-space `xyxy` format. |
+| `skel_2d/<sequence>.npy` | `(T, N, 25, 2)` or `(N, T, 25, 2)` | Image-space joints in pixels. |
+| `skel_3d_relative/<sequence>.npy` | `(T, N, 25, 3)` or `(N, T, 25, 3)` | Camera-relative, self-centered 3D joints in metres. |
+| `cameras/<sequence>.npz` | per-frame arrays | Calibrated camera parameters `K`, `R`, `t`, and optionally `k`. |
+
+The camera archive must contain `K` with shape `(T, 3, 3)`, `R` with shape `(T, 3, 3)`, and `t` with shape `(T, 3)`. Radial distortion coefficients `k` with shape `(T, D)`, where `D >= 2`, are optional; only `k1` and `k2` are used. The camera convention is:
+
+```text
+X_cam = X_world @ R.T + t
+```
+
+All inputs must share the same timeline and player ordering. Time-major arrays `(T, N, ...)` are recommended. The canonical pitch geometry is read from `data/pitch_points.txt`.
+
+### Camera domain
+
+The models were trained with a centered FIFA field coordinate system close to 105 m × 68 m, with field length along `x`, width along `y`, and the pitch plane at `z = 0`. The camera centers observed during training were:
+
+| Axis | Training range | Mean ± standard deviation |
+|---|---:|---:|
+| `x` | `[-0.128, 0.323] m` | `0.112 ± 0.120 m` |
+| `y` | `[-88.155, -66.729] m` | `-75.181 ± 6.200 m` |
+| `z` | `[11.765, 19.039] m` | `16.459 ± 2.102 m` |
+
+Cameras far outside these ranges, or data expressed with a different field scale, origin, or calibration convention, are outside the training distribution and may reduce accuracy.
+
+### Run inference
+
+Run the locally trained TCN checkpoint:
 
 ```bash
-sbatch scripts/feature_engi/feature_creation.sh
-# Une fois le job termine :
-sbatch scripts/feature_engi/normalize.sh
+python -m field_converter.inference \
+  --model-type tcn \
+  --config configs/paper/field_converter_tcn.yaml \
+  --checkpoint outputs/checkpoints/field_converter_tcn/best.pt \
+  --input-dir data/data_inference \
+  --sequence SEQUENCE_NAME \
+  --source-fps 50 \
+  --target-fps 50
 ```
 
-`input_config.use_pitch_points_2d: true` ajoute les 100 coordonnées des 50
-repères ainsi que leur masque de visibilité (50 valeurs), soit 150 dimensions
-par frame. La même entrée est utilisée par le MLP, le TCN et le Transformer.
-
-Entrées optionnelles supportées par `InputConfig` (si présentes dans le `.npz`):
-
-- `skel_2d_sam3dbody_from_bbox_gt`: `(P,T,25,2)` (2D normalisé image)
-- `skel_2d_sam3dbody_from_bbox_gt_box`: `(P,T,25,2)`
-- `bbox_feat` ou `bbox_feat_clean`: `(P,T,5)`
-- `cam_feat_*`: `(T,6)` pour `base_*` ou `(T,12)` pour `boosted_*`
-- `ground_intersection`: `(P,T,3)` (point d'intersection sol normalisé)
-
-Note: toute valeur NaN/Inf dans les features d’entrée est remplacée par 0 (les masks restent séparés).
-
-
-## Configuration (YAML) — détails
-Les fichiers dans config contrôlent tout le pipeline.
-
-### Champs principaux
-- `run_name`: nom du run (utilisé dans `outputs/.../<run_name>/...`)
-- `seed`: seed pour numpy/torch
-- `device`: `auto | cpu | cuda`
-- `prediction_mode`: `absolute | delta`
-  - `absolute`: le modèle sort directement `root_pred_norm`
-  - `delta`: le modèle sort `delta_pred_norm`, puis `root_pred_norm = root_init_norm + delta_pred_norm`
-- `data_dir`: dossier de features normalisées utilisé pour le training, par défaut `data/features_normalized`
-- `root_init_dir`: `auto` ou chemin vers `data/root_init_cam_normalized` (requis en mode `delta`)
-- `output_dir`: par défaut `outputs/` à la racine du repo
-
-### `input_config`
-Active/désactive les composantes concaténées dans le vecteur `x` (frame-wise):
-- `use_x3d_sam_rel` (25*3)
-- `use_x2d_img` (25*2)
-- `use_x2d_box` (25*2)
-- `use_bbox_feat` (5)
-- `bbox_clean_or_noisy`: `clean | noisy` (choix de clé `bbox_feat_clean` vs `bbox_feat`)
-- `use_cam_feat` (6 ou 12)
-- `cam_feat_type`: `base_clean | base_noisy | boosted_clean | boosted_noisy`
-- `use_ground_intersection` (3)
-- `use_valid_joints_as_input` (25)
-
-### `dataset` (helpers debug)
-- `max_sequences`: limite le nombre de séquences par split (ou `null`)
-- `max_samples_per_sequence`: sous-échantillonne aléatoirement les frames valides d’une séquence (ou `null`)
-- `subsample_stride`: stride déterministe sur les frames valides
-
-### `loss_weights`
-- `root`: poids de `SmoothL1` sur le root (actif)
-- `cam3d`: poids de la loss 3D caméra (optionnelle)
-- `proj`: poids de la loss reprojection (optionnelle)
-
-Par défaut, V1 garde `cam3d=0` et `proj=0` (baseline propre “root-only”).
-
-
-## Sorties générées
-
-### Après entraînement
-Dans `outputs/`:
-
-- `checkpoints/<run_name>/best.pt`
-- `checkpoints/<run_name>/last.pt`
-- `eval_reports/<run_name>/train_log.csv`
-- `eval_reports/<run_name>/train_summary.json`
-- `eval_reports/<run_name>/config_used.yaml`
-
-### Après évaluation
-- `eval_reports/<run_name>/metrics.json`
-- `predictions/<run_name>/<split>_predictions.npz`
-  - contient: meta (seq/person/frame), root préd/gt en normalisé & mètres, root monde, erreur root, metrics JSON sérialisées
-  - en mode `delta`, contient aussi `root_delta_pred_norm` et `root_init_norm`
-- `eval_reports/<run_name>/plots/*.png` (si `plots.enabled: true`)
-
-### Inférence qualitative sans GT
-
-Le pipeline MLP/TCN/Transformer pour `data/data_inference` se lance avec
-`scripts/inference/run_inference.sh`. Les résultats denses sont écrits dans
-`outputs/predictions/inference/<run_name>/<sequence>/`. Voir
-`scripts/inference/README.md` pour le format des entrées, les arguments et les
-clés exportées.
-
-### Baseline
-La baseline écrit dans:
-- `outputs/eval_reports/<baseline_run_name>/metrics.json`
-- `outputs/predictions/<baseline_run_name>/<split>_predictions.npz`
-Et la comparaison est sauvée dans:
-- `outputs/eval_reports/<run_name>/baseline_comparison.json`
-- `outputs/eval_reports/<run_name>/plots/model_vs_baseline_<split>.png`
-
-
-## Limitations connues (V1)
-- Modèle strictement frame-wise (pas de cohérence temporelle)
-- Les losses `cam3d` et `proj` sont disponibles mais désactivées par défaut
-- Nécessite un env PyTorch fonctionnel (le code est prêt, mais les runs dépendent de l’environnement)
-
-
-## Dépannage rapide
-- Vérifier PyTorch:
+Run the locally trained Transformer checkpoint:
 
 ```bash
-python -c "import torch; print(torch.__version__)"
+python -m field_converter.inference \
+  --model-type transformer \
+  --config configs/paper/field_converter_transformer.yaml \
+  --checkpoint outputs/checkpoints/field_converter_transformer/best.pt \
+  --input-dir data/data_inference \
+  --sequence SEQUENCE_NAME \
+  --source-fps 50 \
+  --target-fps 50
 ```
 
-- Si `PYTHONPATH` est oublié: `ModuleNotFoundError: field_converter`.
-  Utiliser exactement `PYTHONPATH=src` dans les commandes ci-dessus.
-- Si les fichiers de data ne sont pas présents: `FileNotFoundError` sur `split.json` ou `train/<seq>.npz`.
-  Vérifier `data_dir` dans la config.
+Repeat `--sequence` to process several sequences, or omit it to process every complete sequence in the input directory.
+
+### Inference outputs
+
+```text
+outputs/predictions/inference/<run_name>/<sequence>/
+├── predictions.npz
+├── root_predictions.csv
+└── summary.json
+```
+
+`predictions.npz` contains dense `(N, T, ...)` arrays, including the refined roots in camera coordinates (`root_pred_m`), roots in metric field coordinates (`root_world_pred_m`), reconstructed 3D joints, 2D projections, geometry-based initializations, camera parameters, validity masks, and timing metadata. Invalid or uncovered player-frame positions are stored as `NaN`.
+
+Unless `--no-save-intermediate` is passed, preprocessing artifacts are also saved under `data/data_inference/{features,features_normalized,ground_intersection,root_init_cam,root_init_cam_normalized}/`.
+
+## Repository Structure
+
+```text
+field_converter/
+├── assets/                       # Teaser and method figures
+├── configs/paper/                # TCN and Transformer release configurations
+├── data/                         # Dataset documentation and local data
+├── src/field_converter/
+│   ├── data_preparation/          # Feature construction and normalization
+│   ├── geometry/                  # Projection and coordinate transforms
+│   ├── models/                    # TCN and Transformer refiners
+│   ├── training/                  # Datasets, trainers, and evaluation entry points
+│   ├── inference/                 # External-sequence preprocessing and prediction
+│   └── evaluation/                # Metrics and visualizations
+└── pyproject.toml
+```
+
+## Limitations
+
+- Field Converter requires reliable player tracks, calibrated cameras, and upstream 2D/3D pose estimates.
+- Both temporal models are non-causal and use future as well as past context; they are intended for offline processing.
+- Accuracy may degrade for camera placements, field conventions, or image statistics outside the training distribution.
+
+## Citation
+
+Citation metadata will be added when available.
+
+## Acknowledgments
+
+This project uses relative player-pose estimates produced with [SAM 3D Body](https://github.com/facebookresearch/sam-3d-body). Users should follow the original model's access, licensing, and citation requirements. Dataset access and organization follow the FIFA Skeletal Tracking resources described in [`data/README.md`](data/README.md).
