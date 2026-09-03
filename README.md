@@ -20,6 +20,14 @@
 From monocular broadcast video to world-grounded 3D player pose. Left: three actions observed in the broadcast and their corresponding camera-relative, self-centered 3D poses. Right: the same reconstructed poses localized in a common metric field coordinate system, where their positions can be directly related to the pitch and to one another.
 </em></p>
 
+## Qualitative results
+
+<p align="center"><em>
+  <td><img src="assets/combined.gif" style="width: 100%; max-width: 100%; height: auto;"></td>
+</p>
+<p align="center"><em>
+5 world grounded estimations from the same clip. Ground truth in red and estimation in orange and blue. </em></p>
+
 ## Overview
 
 Field Converter localizes camera-relative 3D player poses in a shared, metric soccer-field coordinate system. Given synchronized player tracks, calibrated cameras, image-space keypoints, and self-centered 3D poses, it first obtains a geometry-based estimate of each player's root translation. A non-causal temporal model then predicts a residual correction before the relative skeleton is reconstructed in camera coordinates and transformed into the world frame.
