@@ -13,6 +13,12 @@
 </p>
 
 <p align="center">
+  <!-- Placeholder arXiv link; replace with the preprint identifier when available. -->
+  <a href="https://arxiv.org/abs/0000.00000"><img src="https://img.shields.io/badge/Preprint-arXiv-B31B1B" alt="Preprint on arXiv"></a>
+  <a href="https://huggingface.co/KhanSimon/field_converter"><img src="https://img.shields.io/badge/Model-Hugging%20Face-FFD21E" alt="Model on Hugging Face"></a>
+</p>
+
+<p align="center">
   <img src="assets/teaser.png" alt="Broadcast actions, camera-relative player poses, and their reconstruction in a common metric field coordinate system.">
 </p>
 
@@ -22,11 +28,12 @@ From monocular broadcast video to world-grounded 3D player pose. Left: three act
 
 ## Qualitative results
 
-<p align="center"><em>
-  <td><img src="assets/combined.gif" style="width: 100%; max-width: 100%; height: auto;"></td>
+<p align="center">
+  <img src="assets/combined.gif" alt="Five world-grounded pose estimates from the same broadcast clip, with ground truth in red and estimates in orange and blue." style="width: 100%; max-width: 100%; height: auto;">
 </p>
 <p align="center"><em>
-5 world grounded estimations from the same clip. Ground truth in red and estimation in orange and blue. </em></p>
+Five world-grounded pose estimates from the same broadcast clip. Ground truth is shown in red, and estimates are shown in orange and blue.
+</em></p>
 
 ## Overview
 
@@ -284,4 +291,3 @@ field_converter/
 - Field Converter requires reliable player tracks, calibrated cameras, and upstream 2D/3D pose estimates.
 - Both temporal models are non-causal and use future as well as past context; they are intended for offline processing.
 - Accuracy may degrade for camera placements, field conventions, or image statistics outside the training distribution.
-
