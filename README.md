@@ -182,7 +182,7 @@ Metrics are written to `outputs/eval_reports/<run_name>/metrics.json`, and dense
 
 ## Inference
 
-> Pretrained TCN and Transformer weights will be available on Hugging Face soon. A release bundle must pair each checkpoint with its exact YAML configuration and training normalization statistics; a `.pt` file alone is not sufficient.
+> Pretrained TCN and Transformer weights from the paper are available on Hugging Face.
 
 ### Required inputs
 
