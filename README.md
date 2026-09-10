@@ -1,4 +1,4 @@
-<h1 align="center">Field Converter: Geometry-Initialized Temporal Residual Refinement for World-Grounded Player Pose Estimation from Soccer Broadcasts</h1>
+<h1 align="center">Field Converter: Geometry-Initialized Temporal Residual Refinement for World-Grounded Player Pose Estimation from Soccer Broadcasts </h1>
 
 <p align="center">
   Simon Khan<sup>1,2</sup> &nbsp;&middot;&nbsp;
