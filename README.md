@@ -14,7 +14,7 @@
 
 <p align="center">
   <!-- Placeholder arXiv link; replace with the preprint identifier when available. -->
-  <a href="https://arxiv.org/abs/0000.00000"><img src="https://img.shields.io/badge/Preprint-arXiv-B31B1B" alt="Preprint on arXiv"></a>
+  <a href="https://arxiv.org/abs/2609.10498"><img src="https://img.shields.io/badge/Preprint-arXiv-B31B1B" alt="Preprint on arXiv"></a>
   <a href="https://huggingface.co/KhanSimon/field_converter"><img src="https://img.shields.io/badge/Model-Hugging%20Face-FFD21E" alt="Model on Hugging Face"></a>
 </p>
 
