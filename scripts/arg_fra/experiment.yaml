@@ -1,0 +1,25 @@
+campaign_name: arg_fra_v1
+data_dir: data
+data_output_root: data/match_tests
+output_root: outputs/match_tests
+
+# Preserve the paper references, including their architecture-specific seeds.
+base_configs:
+  tcn: configs/paper/field_converter_tcn.yaml
+  transformer: configs/paper/field_converter_transformer.yaml
+source_runs:
+  tcn: primary_tcn_full_s2027
+  transformer: primary_transformer_window_41_s1235
+
+folds:
+  arg_fra:
+    valid_match: BRA_KOR
+    test_match: ARG_FRA
+
+preprocessing:
+  sequences_file: sequences_gt.txt
+  raw_features_dirname: features
+  raw_root_init_dirname: root_init_cam
+  pelvis_mode: hips_mean
+  min_bbox_size_px: 10.0
+  seed: 12345
